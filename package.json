@@ -1,0 +1,17 @@
+{
+  "name": "xiangqi-web-suite-v2",
+  "version": "2.7.1",
+  "private": true,
+  "description": "象棋小棋聖：原始開局譜＋名人棋手庫＋棋譜倉庫＋線上對弈＋東萍公開索引自動分頁同步、去重、棋手專屬同步與進度條",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1"
+  }
+}
