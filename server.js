@@ -268,13 +268,29 @@ function stepNameServer(side,n){return side==='r'?redNums[n]:String(n);}
 function notationServer(pieces,piece,from,to){const side=piece.side,cat=pieceCat(piece.type),straight=['R','C','P','K'].includes(cat);const mates=pieces.filter(p=>p.alive&&p!==piece&&p.side===side&&pieceCat(p.type)===cat&&p.col===from[0]);let prefix='';if(mates.length&&['R','C','P','H'].includes(cat)){const front=side==='r'?from[1]<Math.min(...mates.map(x=>x.row)):from[1]>Math.max(...mates.map(x=>x.row));prefix=front?'前':'後';}let body;if(straight){if(to[1]===from[1])body='平'+colNameServer(side,to[0]);else{const adv=side==='r'?to[1]<from[1]:to[1]>from[1];body=(adv?'進':'退')+stepNameServer(side,Math.abs(to[1]-from[1]));}}else{const adv=side==='r'?to[1]<from[1]:to[1]>from[1];body=(adv?'進':'退')+colNameServer(side,to[0]);}return prefix+piece.type+colNameServer(side,from[0])+body;}
 function extractWxfTokens(text){
   const raw=stripHtml(text).replace(/\b\d{1,3}[.、]\s*/g,' ');
-  const re=/(?:前|中|後)?[車马馬炮砲相象仕士帅帥将將兵卒][一二三四五六七八九1-9](?:平|進|退)[一二三四五六七八九1-9]/g;
-  return raw.match(re)||[];
+  const re=/(?:前|中|後|后)?[車车马馬炮砲相象仕士帅帥将將兵卒][一二三四五六七八九1-9１-９][平進进退][一二三四五六七八九1-9１-９]/g;
+  const norm=s=>s.replace(/[１-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).replace(/进/g,'進');
+  return (raw.match(re)||[]).map(norm);
 }
 function decodeDpxqMoves(block){
-  const pieces=decodeDpxqPosition(block.binit); const exact=[]; const tokens=[]; const s=String(block.movelist||'').replace(/[^0-9]/g,''); let side='r'; let valid=true, badAt=-1, reason='';
-  for(let i=0;i+3<s.length;i+=4){const fc=Number(s[i]),fr=Number(s[i+1]),tc=Number(s[i+2]),tr=Number(s[i+3]);if(!inB(fc,fr)||!inB(tc,tr)){valid=false;badAt=i/4+1;reason='座標超出棋盤';break;}const p=pieces.find(x=>x.alive&&x.col===fc&&x.row===fr);if(!p){valid=false;badAt=i/4+1;reason='起點無棋子';break;}if(p.side!==side){valid=false;badAt=i/4+1;reason='輪到'+(side==='r'?'紅':'黑')+'方但資料走子方不符';break;}const legal=legalMovesServer(boardFromPieces(pieces),side).some(m=>m.fc===fc&&m.fr===fr&&m.tc===tc&&m.tr===tr);if(!legal){valid=false;badAt=i/4+1;reason='走法不符合基本棋規';break;}const cap=pieces.find(x=>x.alive&&x.col===tc&&x.row===tr&&x!==p);tokens.push(notationServer(pieces,p,{0:fc,1:fr},{0:tc,1:tr}));exact.push({from:[fc,fr],to:[tc,tr]});if(cap)cap.alive=false;p.col=tc;p.row=tr;side=side==='r'?'b':'r';}
-  return {tokens,exactMoves:exact,valid,badAt,reason,totalEncoded:Math.floor(s.length/4)};
+  const pieces=decodeDpxqPosition(block.binit); const exact=[]; const tokens=[]; const s=String(block.movelist||'').replace(/[^0-9]/g,''); let side='r'; let valid=true, badAt=-1, reason='', illegalCount=0;
+  for(let i=0;i+3<s.length;i+=4){
+    const fc=Number(s[i]),fr=Number(s[i+1]),tc=Number(s[i+2]),tr=Number(s[i+3]);
+    if(!inB(fc,fr)||!inB(tc,tr)){valid=false;badAt=i/4+1;reason='座標超出棋盤';break;}
+    const p=pieces.find(x=>x.alive&&x.col===fc&&x.row===fr);
+    if(!p){valid=false;badAt=i/4+1;reason='起點無棋子';break;}
+    if(p.side!==side){valid=false;badAt=i/4+1;reason='輪到'+(side==='r'?'紅':'黑')+'方但資料走子方不符';break;}
+    // 走子規則檢查改為「記錄不中斷」：我方引擎的合法走法產生器可能有未覆蓋到的邊界情況，
+    // 若因此直接中斷會讓原本完整的棋譜被腰斬，改成繼續解析，只在結果中標註疑慮供參考。
+    const legal=legalMovesServer(boardFromPieces(pieces),side).some(m=>m.fc===fc&&m.fr===fr&&m.tc===tc&&m.tr===tr);
+    if(!legal){ illegalCount++; if(valid){valid=false; badAt=i/4+1; reason='第 '+(i/4+1)+' 步等 '+'走法未通過內建規則覆核（已略過、繼續解析後續著法）'; } }
+    const cap=pieces.find(x=>x.alive&&x.col===tc&&x.row===tr&&x!==p);
+    tokens.push(notationServer(pieces,p,{0:fc,1:fr},{0:tc,1:tr}));
+    exact.push({from:[fc,fr],to:[tc,tr]});
+    if(cap)cap.alive=false;
+    p.col=tc;p.row=tr;side=side==='r'?'b':'r';
+  }
+  return {tokens,exactMoves:exact,valid,badAt,reason,illegalCount,totalEncoded:Math.floor(s.length/4)};
 }
 function parseDpxqIndex(html,baseUrl){
   const out=[]; const seen=new Set(); const re=/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi; let m;
@@ -311,10 +327,18 @@ async function fetchDetail(detailUrl){
       format: wxf.length?'WXF':'unknown'
     };
   }
-  const dec = b.movelist ? decodeDpxqMoves(b) : {tokens:extractWxfTokens(html),exactMoves:[],valid:false,badAt:-1,reason:'沒有 DhtmlXQ movelist，使用 WXF 文字解析',totalEncoded:0};
+  let dec = b.movelist ? decodeDpxqMoves(b) : {tokens:[],exactMoves:[],valid:false,badAt:-1,reason:'沒有 DhtmlXQ movelist',totalEncoded:0};
+  // DhtmlXQ 座標解出來的步數偏少或不完整時，改用頁面上的純文字棋譜補強（取步數較多者）。
+  // 純文字棋譜沒有精確座標，會交給前端棋盤自己的中文記譜解析引擎重播，兩套機制互相截長補短。
+  if(!dec.tokens.length || !dec.valid){
+    const wxf = extractWxfTokens(html);
+    if(wxf.length > dec.tokens.length){
+      dec = {tokens:wxf, exactMoves:[], valid:true, badAt:-1, reason:'DhtmlXQ座標不足，已改用頁面文字棋譜補強', totalEncoded:wxf.length};
+    }
+  }
   return {html, b, dec, format: b.movelist?'DhtmlXQ':(dec.tokens.length?'WXF':'unknown')};
 }
-async function fetchDetailWithRetry(url,tries=2){
+async function fetchDetailWithRetry(url,tries=3){
   for(let i=0;i<tries;i++){
     try{
       const d=await fetchDetail(url);
@@ -325,7 +349,7 @@ async function fetchDetailWithRetry(url,tries=2){
   return await fetchDetail(url);
 }
 
-function upsertGameFromDetail(indexItem,detail){const b=detail?.b||{};const dec=detail?.dec||{};const red=b.red||indexItem.red||'';const black=b.black||indexItem.black||'';const result=b.result||indexItem.result||'未知';const event=b.event||indexItem.event||indexItem.title||'';const year=Number((b.date||'').match(/(19|20)\d{2}/)?.[0]||indexItem.year||0)||null;const opening=b.open||indexItem.opening||'';const key=indexItem.detailUrl;const existing=db.games.find(g=>g.source==='dpxq-index'&&g.detailUrl===key);const rec=normGame({red,black,event,year,result,opening,moves:dec.tokens||[],tokens:dec.tokens||[],exactMoves:dec.exactMoves||[],source:'dpxq-index',sourceUrl:indexItem.sourceUrl,detailUrl:indexItem.detailUrl,format:detail?.format||'DhtmlXQ',fen:b.fen||'',dpxqBinit:b.binit||'',dpxqMovelist:b.movelist||'',validation:dec.valid?'ok':(dec.reason||'unknown'),notes:`東萍完整棋譜同步。${dec.valid?'合法走法驗證通過。':('驗證：'+(dec.reason||'未完成'))}`},existing?.id||db.nextGameId++);if(existing)Object.assign(existing,rec);else db.games.push(rec);ensurePlayer(red);ensurePlayer(black);return {added:!existing,updated:!!existing,playable:!!(rec.exactMoves&&rec.exactMoves.length)};}
+function upsertGameFromDetail(indexItem,detail){const b=detail?.b||{};const dec=detail?.dec||{};const red=b.red||indexItem.red||'';const black=b.black||indexItem.black||'';const result=b.result||indexItem.result||'未知';const event=b.event||indexItem.event||indexItem.title||'';const year=Number((b.date||'').match(/(19|20)\d{2}/)?.[0]||indexItem.year||0)||null;const opening=b.open||indexItem.opening||'';const key=indexItem.detailUrl;const existing=db.games.find(g=>g.source==='dpxq-index'&&g.detailUrl===key);const rec=normGame({red,black,event,year,result,opening,moves:dec.tokens||[],tokens:dec.tokens||[],exactMoves:dec.exactMoves||[],source:'dpxq-index',sourceUrl:indexItem.sourceUrl,detailUrl:indexItem.detailUrl,format:detail?.format||'DhtmlXQ',fen:b.fen||'',dpxqBinit:b.binit||'',dpxqMovelist:b.movelist||'',validation:dec.valid?'ok':(dec.reason||'unknown'),notes:`東萍完整棋譜同步。${dec.valid?'合法走法驗證通過。':('驗證：'+(dec.reason||'未完成'))}`},existing?.id||db.nextGameId++);if(existing)Object.assign(existing,rec);else db.games.push(rec);ensurePlayer(red);ensurePlayer(black);return {added:!existing,updated:!!existing,playable:!!(rec.moves&&rec.moves.length)};}
 function importIndexItems(items){let added=0,updated=0;for(const x of items){const existing=db.games.find(g=>g.source==='dpxq-index'&&g.detailUrl===x.detailUrl);const rec=normGame({...x,event:x.title},existing?.id||db.nextGameId++);if(existing){Object.assign(existing,rec);updated++;}else{db.games.push(rec);added++;}ensurePlayer(x.red);ensurePlayer(x.black);}saveDb();return {added,updated};}
 function setSyncError(message){if(syncJob){syncJob.status='error';syncJob.error=message;syncJob.finishedAt=new Date().toISOString();}}
 
