@@ -1,1 +1,167 @@
-<!doctype html><html lang="zh-TW"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>棋譜詳情</title><style>body{margin:0;background:#f7f2e8;color:#24180f;font-family:system-ui,"Noto Sans TC",sans-serif}header{background:#7f1717;color:#fff;padding:15px 18px}.back{color:#fff;text-decoration:none;margin-right:14px}main{max-width:1000px;margin:auto;padding:16px}.card{background:#fff;border:1px solid #e7dac8;border-radius:16px;padding:16px;margin-bottom:12px}.meta{color:#76675b;font-size:.84rem;line-height:1.8}.moves{font-size:.95rem;line-height:2;background:#faf7f1;padding:12px;border-radius:12px;margin-top:12px}.move{display:inline-block;margin-right:8px}.actions a{display:inline-block;margin:8px 7px 0 0;padding:9px 11px;border-radius:9px;background:#8b1a1a;color:#fff;text-decoration:none;font-size:.82rem}.actions a.alt{background:#eee6db;color:#5c4637}</style></head><body><header><a class="back" href="/repository.html">← 棋譜倉庫</a><b>♟ 棋譜詳情</b></header><main id="app"><div class="card">載入中…</div></main><script>const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const id=new URLSearchParams(location.search).get('id');fetch('/api/games/'+encodeURIComponent(id)).then(r=>r.json()).then(g=>{const mv=g.moves||[];app.innerHTML=`<section class="card"><h1>${esc(g.red)}　${esc(g.result||'未知')}　${esc(g.black)}</h1><div class="meta">${esc(g.event||'')}<br>年份：${g.year||'—'}　開局：${esc(g.opening||'未分類')}<br>來源：${esc(g.source||'')}<br>${esc(g.notes||'')}</div><div class="actions"><a href="/?gameId=${encodeURIComponent(g.id)}">原棋盤播放</a>${g.detailUrl?`<a href="${esc(g.detailUrl)}" target="_blank">查看公開棋譜來源</a>`:''}${g.sourceUrl?`<a class="alt" href="${esc(g.sourceUrl)}" target="_blank">東萍象棋網</a>`:''}</div></section><section class="card"><h2>棋譜</h2>${mv.length?`<div class="moves">${mv.map((m,i)=>`<span class="move"><b>${i%2===0?Math.floor(i/2)+1+'.':''}</b>${esc(m)}</span>`).join('')}</div>`:'<p>此筆目前只有索引資料，尚未加入完整著法。</p>'}</section>`}).catch(e=>app.innerHTML='<div class="card">棋譜不存在</div>');</script></body></html>
+<!doctype html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>棋譜詳情｜象棋小棋聖 V2.8.1</title>
+<style>
+body{margin:0;background:#f7f2e8;color:#24180f;font-family:system-ui,"Noto Sans TC",sans-serif}
+header{background:#7f1717;color:#fff;padding:15px 18px}
+.back{color:#fff;text-decoration:none;margin-right:14px}
+main{max-width:1000px;margin:auto;padding:16px}
+.card{background:#fff;border:1px solid #e7dac8;border-radius:16px;padding:16px;margin-bottom:12px}
+.meta{color:#76675b;font-size:.84rem;line-height:1.8}
+.moves{font-size:.95rem;line-height:2;background:#faf7f1;padding:12px;border-radius:12px;margin-top:12px}
+.move{display:inline-block;margin-right:8px}
+.actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
+.actions button,.actions a{display:inline-block;margin:0;padding:9px 11px;border:0;border-radius:9px;background:#8b1a1a;color:#fff;text-decoration:none;font-size:.82rem;cursor:pointer}
+.actions .alt{background:#eee6db;color:#5c4637}
+#playerWrap{display:none;position:fixed;inset:0;background:#f7f2e8;z-index:20}
+#playerHead{height:48px;display:flex;align-items:center;gap:8px;padding:0 12px;box-sizing:border-box;background:#7f1717;color:#fff}
+#playerHead button{padding:7px 11px;border:0;border-radius:8px;background:#fff;color:#5c1616;cursor:pointer;font-weight:700}
+#status{font-size:.82rem}
+#boardFrame{width:100%;height:calc(100% - 48px);border:0;display:block}
+</style>
+</head>
+<body>
+<header><a class="back" href="/repository.html">← 棋譜倉庫</a><b>♟ 棋譜詳情</b></header>
+<main id="app"><div class="card">載入中…</div></main>
+
+<div id="playerWrap">
+  <div id="playerHead">
+    <button onclick="closeBoard()">← 返回棋譜詳情</button>
+    <span id="status">正在載入原棋盤…</span>
+  </div>
+  <iframe id="boardFrame" title="象棋原棋盤"></iframe>
+</div>
+
+<script>
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const id=new URLSearchParams(location.search).get('id');
+let gameData=null;
+
+function renderGame(g){
+  const mv=Array.isArray(g.moves)?g.moves:[];
+  app.innerHTML=`<section class="card">
+    <h1>${esc(g.red)}　${esc(g.result||'未知')}　${esc(g.black)}</h1>
+    <div class="meta">
+      ${esc(g.event||'')}<br>
+      年份：${g.year||'—'}　開局：${esc(g.opening||'未分類')}<br>
+      來源：${esc(g.source||'')}<br>
+      ${esc(g.notes||'')}
+    </div>
+    <div class="actions">
+      <button onclick="openBoard()">▶ 原棋盤播放</button>
+      ${g.detailUrl?`<a class="alt" href="${esc(g.detailUrl)}" target="_blank">查看公開棋譜來源</a>`:''}
+      ${g.sourceUrl?`<a class="alt" href="${esc(g.sourceUrl)}" target="_blank">東萍象棋網</a>`:''}
+    </div>
+  </section>
+  <section class="card">
+    <h2>棋譜</h2>
+    ${mv.length
+      ? `<div class="moves">${mv.map((m,i)=>`<span class="move"><b>${i%2===0?Math.floor(i/2)+1+'.':''}</b>${esc(typeof m==='string'?m:m?.notation||'')}</span>`).join('')}</div>`
+      : '<p>此筆目前只有索引資料，尚未加入完整著法。</p>'}
+  </section>`;
+}
+
+async function loadGame(){
+  if(!id){app.innerHTML='<div class="card">缺少棋譜 ID</div>';return;}
+  try{
+    const r=await fetch('/api/games/'+encodeURIComponent(id),{cache:'no-store'});
+    if(!r.ok)throw new Error('棋譜不存在');
+    gameData=await r.json();
+    renderGame(gameData);
+  }catch(e){
+    app.innerHTML='<div class="card">載入棋譜失敗：'+esc(e.message)+'</div>';
+  }
+}
+
+function closeBoard(){
+  document.getElementById('playerWrap').style.display='none';
+  document.getElementById('boardFrame').src='about:blank';
+}
+
+function openBoard(){
+  if(!gameData)return;
+  const wrap=document.getElementById('playerWrap');
+  const frame=document.getElementById('boardFrame');
+  const status=document.getElementById('status');
+  wrap.style.display='block';
+  status.textContent='正在取得完整棋譜並交給原棋盤…';
+
+  const tokens=Array.isArray(gameData.tokens)&&gameData.tokens.length
+    ? gameData.tokens.map(x=>typeof x==='string'?x:(x?.notation||'')).filter(Boolean)
+    : (Array.isArray(gameData.moves)
+        ? gameData.moves.map(x=>typeof x==='string'?x:(x?.notation||'')).filter(Boolean)
+        : []);
+
+  if(tokens.length<2){
+    status.textContent='❌ 此棋譜沒有完整著法，無法播放。';
+    return;
+  }
+
+  const exactRaw=Array.isArray(gameData.exactMoves)&&gameData.exactMoves.length===tokens.length
+    ? gameData.exactMoves : null;
+
+  // 原棋盤 addImportedGame 會使用 exactMoves；
+  // 補上 notation，讓原棋盤的記譜列也能正常顯示。
+  const exactMoves=exactRaw
+    ? exactRaw.map((m,i)=>({
+        from:Array.isArray(m.from)?m.from:[m.fc,m.fr],
+        to:Array.isArray(m.to)?m.to:[m.tc,m.tr],
+        notation:tokens[i]
+      }))
+    : null;
+
+  let attempts=0;
+  frame.onload=()=>{
+    const tryLoad=()=>{
+      attempts++;
+      try{
+        const w=frame.contentWindow;
+        if(typeof w.addImportedGame!=='function' || typeof w.loadLine!=='function'){
+          if(attempts<20){status.textContent='原棋盤初始化中…';setTimeout(tryLoad,300);return;}
+          throw new Error('原棋盤初始化失敗');
+        }
+
+        // 每次開啟都建立唯一分類，避免與既有開局資料重名。
+        const cat='☁ 東萍棋庫 #'+String(gameData.id);
+        const name=(gameData.red||'紅方')+' 對 '+(gameData.black||'黑方');
+
+        const meta={
+          master:true,
+          red:gameData.red||'',
+          black:gameData.black||'',
+          year:gameData.year||'',
+          event:gameData.event||'',
+          result:gameData.result||''
+        };
+
+        const rr=w.addImportedGame(
+          '先手',
+          cat,
+          name,
+          tokens.slice(),
+          false,
+          meta,
+          exactMoves
+        );
+        if(!rr || !rr.ok)throw new Error(rr?.err||'棋譜解析失敗');
+
+        w.loadLine('先手',cat,0);
+        status.textContent='✔ 已載入原棋盤，可使用下方播放控制';
+      }catch(e){
+        if(attempts<20){setTimeout(tryLoad,300);return;}
+        status.textContent='❌ 原棋盤載入失敗：'+e.message;
+      }
+    };
+    tryLoad();
+  };
+
+  frame.src='/?embedded=1&dpxqGameId='+encodeURIComponent(gameData.id);
+}
+
+loadGame();
+</script>
+</body>
+</html>
