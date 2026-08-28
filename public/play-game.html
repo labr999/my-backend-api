@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>原棋盤播放｜象棋小棋聖 V2.8.1</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#f7f2e8}
+#msg{position:fixed;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;background:#f7f2e8;color:#5c4637}
+#msg .box{background:#fff;border:1px solid #e7dac8;border-radius:16px;padding:24px;max-width:520px}
+#msg b{font-size:1.1rem} #msg p{line-height:1.7;font-size:.9rem}
+iframe{display:block;width:100%;height:100%;border:0}
+</style>
+</head>
+<body>
+<div id="msg"><div class="box"><b>♟ 正在載入原棋盤…</b><p id="status">正在取得完整棋譜並交給原本棋盤播放引擎。</p></div></div>
+<iframe id="board" title="象棋原棋盤"></iframe>
+<script>
+const qs=new URLSearchParams(location.search);
+const id=qs.get('id')||qs.get('gameId');
+const msg=document.getElementById('msg');
+const status=document.getElementById('status');
+const frame=document.getElementById('board');
+
+function fail(s){status.textContent=s;}
+
+async function start(){
+  if(!id){fail('缺少棋譜 ID。請從棋譜倉庫進入。');return;}
+  try{
+    const r=await fetch('/api/games/'+encodeURIComponent(id),{cache:'no-store'});
+    if(!r.ok) throw new Error('後端找不到這筆棋譜（ID '+id+'）');
+    const g=await r.json();
+
+    const tokens=Array.isArray(g.tokens)&&g.tokens.length
+      ? g.tokens
+      : (Array.isArray(g.moves)
+          ? g.moves.map(m=>typeof m==='string'?m:(m&&m.notation)).filter(Boolean)
+          : []);
+
+    const exactMoves=Array.isArray(g.exactMoves)&&g.exactMoves.length===tokens.length
+      ? g.exactMoves
+      : null;
+
+    if(!tokens.length){
+      fail('這筆棋譜目前只有公開索引，沒有完整著法，因此無法播放。');
+      return;
+    }
+
+    frame.onload=()=>{
+      try{
+        const w=frame.contentWindow;
+        if(typeof w.addImportedGame!=='function' || typeof w.loadLine!=='function'){
+          throw new Error('原棋盤尚未完成初始化');
+        }
+
+        // 使用唯一分類，避免與原本資料庫中的同名分類衝突
+        const cat='☁ 東萍棋庫：'+(g.opening||'未分類')+' #'+String(g.id);
+        const name=g.name||((g.red||'紅方')+' 對 '+(g.black||'黑方'));
+        const meta={
+          master:true,
+          red:g.red||'',
+          black:g.black||'',
+          year:g.year||'',
+          event:g.event||'',
+          result:g.result||''
+        };
+
+        const rr=w.addImportedGame(
+          '先手', cat, name, tokens, false, meta, exactMoves
+        );
+        if(!rr || !rr.ok) throw new Error((rr&&rr.err)||'棋譜轉換失敗');
+
+        // 新分類剛建立，棋譜一定位於第 0 筆
+        w.loadLine('先手',cat,0);
+        msg.style.display='none';
+      }catch(e){
+        fail('原棋盤載入失敗：'+e.message);
+      }
+    };
+
+    frame.src='/?embedded=1';
+  }catch(e){
+    fail('載入失敗：'+e.message);
+  }
+}
+start();
+</script>
+</body>
+</html>
