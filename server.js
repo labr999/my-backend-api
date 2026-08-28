@@ -17,22 +17,73 @@ function writeJson(file, data) { const tmp=file+'.tmp'; fs.writeFileSync(tmp, JS
 function contains(v,q){return String(v??'').toLowerCase().includes(String(q??'').trim().toLowerCase());}
 function normGame(g,id){return {id,red:g.red||'未知紅方',black:g.black||'未知黑方',event:g.event||'',year:g.year?Number(g.year):null,result:g.result||'未知',opening:g.opening||'',moves:Array.isArray(g.moves)?g.moves:[],tokens:Array.isArray(g.tokens)?g.tokens:null,exactMoves:Array.isArray(g.exactMoves)?g.exactMoves:null,source:g.source||'user',sourceUrl:g.sourceUrl||'',detailUrl:g.detailUrl||'',notes:g.notes||'',format:g.format||'',fen:g.fen||'',dpxqBinit:g.dpxqBinit||'',dpxqMovelist:g.dpxqMovelist||'',validation:g.validation||'',created_at:g.created_at||new Date().toISOString()};}
 
+// ---- GitHub 資料持久化：把 xiangqi-db.json 同步存回 GitHub repo，解決 Render 免費方案重啟後資料消失的問題 ----
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
+const GITHUB_REPO = process.env.GITHUB_REPO || ''; // 格式："labr999/my-backend-api"
+const GITHUB_BRANCH = process.env.GITHUB_BRANCH || 'main';
+const GITHUB_DATA_PATH = process.env.GITHUB_DATA_PATH || 'data/xiangqi-db.json';
+const GITHUB_ENABLED = !!(GITHUB_TOKEN && GITHUB_REPO);
+let githubSha = null;
+let lastGithubPush = null, lastGithubError = null, githubPushPending = false, githubPushTimer = null;
+function githubHeaders(){return {Authorization:`Bearer ${GITHUB_TOKEN}`,'User-Agent':'xiangqi-web-suite','Content-Type':'application/json',Accept:'application/vnd.github+json'};}
+async function githubFetchDb(){
+  if(!GITHUB_ENABLED) return null;
+  try{
+    const r=await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/${encodeURIComponent(GITHUB_DATA_PATH)}?ref=${GITHUB_BRANCH}`,{headers:githubHeaders()});
+    if(!r.ok){ console.log('[GitHub] 目前 repo 裡還沒有資料檔（第一次同步屬正常），狀態：',r.status); return null; }
+    const data=await r.json();
+    githubSha=data.sha;
+    const content=Buffer.from(data.content,'base64').toString('utf8');
+    return JSON.parse(content);
+  }catch(e){ console.error('[GitHub] 讀取資料失敗：',e.message); return null; }
+}
+function scheduleGithubPush(){
+  if(!GITHUB_ENABLED) return;
+  githubPushPending=true;
+  clearTimeout(githubPushTimer);
+  githubPushTimer=setTimeout(githubPushDb,8000); // 等 8 秒沒有新變動才真正推送，避免同步中頻繁提交
+}
+async function githubPushDb(){
+  if(!GITHUB_ENABLED || !githubPushPending) return;
+  githubPushPending=false;
+  try{
+    const content=Buffer.from(JSON.stringify(db,null,2),'utf8').toString('base64');
+    const body={message:`自動同步棋譜資料 ${new Date().toISOString()}`,content,branch:GITHUB_BRANCH,...(githubSha?{sha:githubSha}:{})};
+    const r=await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/${encodeURIComponent(GITHUB_DATA_PATH)}`,{method:'PUT',headers:githubHeaders(),body:JSON.stringify(body)});
+    const data=await r.json();
+    if(!r.ok){
+      lastGithubError=data.message||String(r.status);
+      console.error('[GitHub] 推送失敗：',lastGithubError);
+      if(r.status===409){ githubSha=null; const fresh=await githubFetchDb(); if(fresh){ scheduleGithubPush(); } }
+      return;
+    }
+    githubSha=data.content.sha; lastGithubPush=new Date().toISOString(); lastGithubError=null;
+    console.log('[GitHub] 已將最新棋譜資料同步回', GITHUB_REPO);
+  }catch(e){ lastGithubError=e.message; console.error('[GitHub] 推送發生錯誤：',e.message); }
+}
+
 const seed=readJson(path.join(DATA_DIR,'seed.json'),{players:[],games:[]});
-let db=readJson(DB_FILE,null);
-if(!db || !Array.isArray(db.players) || !Array.isArray(db.games)){
-  db={players:[],games:[],nextGameId:1};
+let db={players:[],games:[],nextGameId:1};
+async function initDb(){
+  const remote=await githubFetchDb();
+  const local=readJson(DB_FILE,null);
+  if(remote && Array.isArray(remote.players) && Array.isArray(remote.games)){
+    db=remote; console.log('[GitHub] 已從 repo 載入最新棋譜資料，共',db.games.length,'盤。');
+  } else if(local && Array.isArray(local.players) && Array.isArray(local.games)){
+    db=local;
+  }
+  db.nextGameId=db.nextGameId||Math.max(0,...db.games.map(g=>Number(g.id)||0))+1;
+  for(const p of seed.players||[]){
+    if(!db.players.some(x=>x.name===p.name)) db.players.push({id:db.players.length+1,name:p.name,title:p.title||''});
+  }
+  for(const g of seed.games||[]){
+    const key=(g.red||'')+'|'+(g.black||'')+'|'+(g.event||'')+'|'+(g.year||'');
+    const exists=db.games.some(x=>(x.red||'')+'|'+(x.black||'')+'|'+(x.event||'')+'|'+(x.year||'')===key);
+    if(!exists) db.games.push(normGame(g,db.nextGameId++));
+  }
+  writeJson(DB_FILE,db);
 }
-db.nextGameId=db.nextGameId||Math.max(0,...db.games.map(g=>Number(g.id)||0))+1;
-for(const p of seed.players||[]){
-  if(!db.players.some(x=>x.name===p.name)) db.players.push({id:db.players.length+1,name:p.name,title:p.title||''});
-}
-for(const g of seed.games||[]){
-  const key=(g.red||'')+'|'+(g.black||'')+'|'+(g.event||'')+'|'+(g.year||'');
-  const exists=db.games.some(x=>(x.red||'')+'|'+(x.black||'')+'|'+(x.event||'')+'|'+(x.year||'')===key);
-  if(!exists) db.games.push(normGame(g,db.nextGameId++));
-}
-writeJson(DB_FILE,db);
-function saveDb(){writeJson(DB_FILE,db);}
+function saveDb(){writeJson(DB_FILE,db);scheduleGithubPush();}
 function playerGames(name){return db.games.filter(g=>g.red===name||g.black===name);}
 function gameOutcomeFor(name,g){
   const r=String(g.result||'').trim();
@@ -69,7 +120,7 @@ app.use(express.static(path.join(ROOT,'public')));
 
 const APP_VERSION='2.8.0';
 const DISPLAY_VERSION='V2.8';
-app.get('/api/health',(req,res)=>res.json({ok:true,service:'xiangqi-web-suite',version:APP_VERSION,displayVersion:DISPLAY_VERSION,storage:'json',time:new Date().toISOString()}));
+app.get('/api/health',(req,res)=>res.json({ok:true,service:'xiangqi-web-suite',version:APP_VERSION,displayVersion:DISPLAY_VERSION,storage:'json',github:{enabled:GITHUB_ENABLED,repo:GITHUB_REPO||null,lastPush:lastGithubPush,lastError:lastGithubError,pending:githubPushPending},time:new Date().toISOString()}));
 app.get('/api/stats',(req,res)=>res.json({players:db.players.length,games:db.games.length,playableGames:db.games.filter(g=>g.moves?.length).length,onlineRooms:rooms.size}));
 app.get('/api/players',(req,res)=>{
   const q=req.query.q||'', limit=Math.min(Number(req.query.limit||200),500);
@@ -334,4 +385,6 @@ io.on('connection',socket=>{
 });
 
 app.use((req,res)=>res.sendFile(path.join(ROOT,'public','index.html')));
-server.listen(PORT,()=>console.log(`\nXiangqi Web Suite ${DISPLAY_VERSION} running at http://localhost:${PORT}\nData: ${DB_FILE}\n`));
+initDb().then(()=>{
+  server.listen(PORT,()=>console.log(`\nXiangqi Web Suite ${DISPLAY_VERSION} running at http://localhost:${PORT}\nData: ${DB_FILE}\nGitHub 自動同步：${GITHUB_ENABLED?('已啟用（'+GITHUB_REPO+'）'):'未啟用（缺少 GITHUB_TOKEN 或 GITHUB_REPO 環境變數）'}\n`));
+});
