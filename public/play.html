@@ -1,0 +1,40 @@
+<!doctype html><html lang="zh-TW"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>線上象棋對弈</title><style>
+body{margin:0;background:#efe2c6;color:#2a1b10;font-family:system-ui,"Noto Sans TC",sans-serif}header{background:#8b1a1a;color:#fff;padding:16px}main{max-width:920px;margin:auto;padding:14px}.top{background:#fff;padding:14px;border-radius:14px;margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap}.field,button{padding:10px;border-radius:9px;border:1px solid #cdbb9f;font:inherit}button{background:#8b1a1a;color:#fff;cursor:pointer}.board{width:min(92vw,560px);aspect-ratio:9/10;margin:auto;display:grid;grid-template-columns:repeat(9,1fr);grid-template-rows:repeat(10,1fr);position:relative;background:#e8d5a8;border:10px solid #5a3a22;box-shadow:0 4px 14px #0003}.board:before{content:"楚河　　　　漢界";position:absolute;left:0;right:0;top:45%;text-align:center;font-size:clamp(18px,4vw,28px);color:#6a4a24;z-index:0;pointer-events:none}.cell{position:relative;display:flex;align-items:center;justify-content:center;z-index:1}.cell:before{content:"";position:absolute;inset:50% 0 auto 0;border-top:1px solid #6d4a28;z-index:-1}.cell:nth-child(9n+1):after{content:"";position:absolute;top:0;bottom:0;left:50%;border-left:1px solid #6d4a28;z-index:-1}.piece{width:82%;height:82%;max-width:48px;max-height:48px;border-radius:50%;background:#ead9b8;border:2px solid #5a3a22;display:flex;align-items:center;justify-content:center;font-size:clamp(18px,4vw,28px);font-weight:800;box-shadow:0 2px 3px #0004;cursor:pointer}.red{color:#b52a2a}.black{color:#222}.selected{outline:3px solid #4caf50}.status{margin:10px auto;max-width:560px;background:#fff;padding:12px;border-radius:12px;text-align:center}.room{font-weight:800;color:#8b1a1a;font-size:1.2rem}.hint{font-size:.8rem;color:#76675b}</style></head>
+<body>
+<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.8</span> <span id="xq-version-status">●</span></div>
+<script>
+(async()=>{try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();const el=document.getElementById('xq-version-status');if(el)el.textContent=d.ok?'● V'+d.version:'● OFFLINE';}catch(e){}})();
+</script><header>♟ <b>線上象棋對弈</b>　<a href="/" style="color:#fff">← 首頁</a></header><main>
+<div class="top"><input id="name" class="field" placeholder="你的棋手名稱"><button onclick="create()">建立房間</button><input id="room" class="field" placeholder="輸入房號"><button onclick="join()">加入房間</button><button onclick="resign()">認輸</button></div>
+<div class="status"><div>房號：<span id="code" class="room">—</span></div><div id="state">先建立房間或加入朋友的房間</div><div class="hint">建立者執紅、加入者執黑；把房號分享給朋友即可。</div></div>
+<div id="board" class="board"></div></main>
+<script src="/socket.io/socket.io.js"></script><script>
+const socket=io();let roomCode='',side='',started=false,selected=null,moves=[];let board=initial();
+const CN={K:'帥',A:'仕',B:'相',N:'馬',R:'車',C:'炮',P:'兵',k:'將',a:'士',b:'象',n:'馬',r:'車',c:'砲',p:'卒'};
+function initial(){const b=Array.from({length:10},()=>Array(9).fill(null));const put=(r,c,t)=>b[r][c]=t;
+[['r',0,'r'],['n',1,'n'],['b',2,'b'],['a',3,'a'],['k',4,'k'],['a',5,'a'],['b',6,'b'],['n',7,'n'],['r',8,'r'],['c',1,'c'],['c',7,'c'],['p',0,'p'],['p',2,'p'],['p',4,'p'],['p',6,'p'],['p',8,'p']].forEach(([s,c,t])=>put(0,c,s+t));
+[['R',0,'R'],['N',1,'N'],['B',2,'B'],['A',3,'A'],['K',4,'K'],['A',5,'A'],['B',6,'B'],['N',7,'N'],['R',8,'R'],['C',1,'C'],['C',7,'C'],['P',0,'P'],['P',2,'P'],['P',4,'P'],['P',6,'P'],['P',8,'P']].forEach(([s,c,t])=>put(9,c,s+t));
+return b}
+function sideOf(t){return t===t.toUpperCase()?'red':'black'}
+function inb(r,c){return r>=0&&r<10&&c>=0&&c<9}
+function legalMoves(b,r,c){const t=b[r][c];if(!t)return[];const s=sideOf(t),u=t.toUpperCase(),out=[];const add=(rr,cc)=>{if(!inb(rr,cc))return; if(!b[rr][cc]||sideOf(b[rr][cc])!==s)out.push([rr,cc])};
+if(u==='R'){for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){let rr=r+dr,cc=c+dc;while(inb(rr,cc)){if(!b[rr][cc])out.push([rr,cc]);else{if(sideOf(b[rr][cc])!==s)out.push([rr,cc]);break}rr+=dr;cc+=dc}}}
+if(u==='C'){for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){let rr=r+dr,cc=c+dc,screen=false;while(inb(rr,cc)){if(!screen){if(!b[rr][cc])out.push([rr,cc]);else screen=true}else if(b[rr][cc]){if(sideOf(b[rr][cc])!==s)out.push([rr,cc]);break}rr+=dr;cc+=dc}}}
+if(u==='N'){for(const [dr,dc,lr,lc] of [[2,1,1,0],[2,-1,1,0],[-2,1,-1,0],[-2,-1,-1,0],[1,2,0,1],[-1,2,0,1],[1,-2,0,-1],[-1,-2,0,-1]])if(inb(r+lr,c+lc)&&!b[r+lr][c+lc])add(r+dr,c+dc)}
+if(u==='B'){for(const [dr,dc] of [[2,2],[2,-2],[-2,2],[-2,-2]]){const rr=r+dr,cc=c+dc,mr=r+dr/2,mc=c+dc/2;if(inb(rr,cc)&&!b[mr][mc]&&((s==='red'&&rr>=5)||(s==='black'&&rr<=4)))add(rr,cc)}}
+if(u==='A'){for(const [dr,dc] of [[1,1],[1,-1],[-1,1],[-1,-1]]){const rr=r+dr,cc=c+dc;if(inb(rr,cc)&&cc>=3&&cc<=5&&((s==='red'&&rr>=7)||(s==='black'&&rr<=2)))add(rr,cc)}}
+if(u==='K'){for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){const rr=r+dr,cc=c+dc;if(inb(rr,cc)&&cc>=3&&cc<=5&&((s==='red'&&rr>=7)||(s==='black'&&rr<=2)))add(rr,cc)}}
+if(u==='P'){const f=s==='red'?-1:1;add(r+f,c);if((s==='red'&&r<=4)||(s==='black'&&r>=5)){add(r,c-1);add(r,c+1)}}
+return out}
+function draw(){boardEl=board;boardEl.innerHTML='';for(let r=0;r<10;r++)for(let c=0;c<9;c++){const d=document.createElement('div');d.className='cell';const t=board[r][c];if(t){const p=document.createElement('div');p.className='piece '+(sideOf(t));p.textContent=CN[t];if(selected&&selected[0]===r&&selected[1]===c)p.classList.add('selected');p.onclick=e=>{e.stopPropagation();clickPiece(r,c)};d.appendChild(p)}d.onclick=()=>clickCell(r,c);boardEl.appendChild(d)}}
+function clickPiece(r,c){if(!started)return;const s=sideOf(board[r][c]);if((moves.length%2===0?'red':'black')!==side)return;if(s===side){selected=[r,c];draw();}else if(selected){tryMove(r,c)}}
+function clickCell(r,c){if(selected)tryMove(r,c)}
+function tryMove(r,c){const [fr,fc]=selected,legal=legalMoves(board,fr,fc).some(x=>x[0]===r&&x[1]===c);if(!legal)return;const move={fr,fc,tr:r,tc:c,piece:board[fr][fc],captured:board[r][c]||null};apply(move);moves.push(move);socket.emit('move',{room:roomCode,move});selected=null;draw();state.textContent='已走 '+moves.length+' 步，等待對手';}
+function apply(m){board[m.tr][m.tc]=m.piece;board[m.fr][m.fc]=null}
+socket.on('roomCreated',d=>{roomCode=d.room;side=d.side;code.textContent=roomCode;state.textContent='房間已建立，等待黑方加入';});
+socket.on('gameStart',d=>{roomCode=d.room;started=true;moves=[];board=initial();code.textContent=roomCode;state.textContent=`${d.red}（紅） vs ${d.black}（黑）`;draw()});
+socket.on('move',d=>{if(d.from===socket.id)return; if(moves.length===d.index){apply(d.move);moves.push(d.move);draw();state.textContent=(moves.length%2===0?'輪到紅方':'輪到黑方')+(moves.length%2===0&&side==='red'||moves.length%2===1&&side==='black'?'｜你的回合':'')}})
+socket.on('gameError',m=>alert(m));socket.on('gameEnd',d=>{state.textContent='對局結束，勝方：'+d.winner;started=false});
+function create(){socket.emit('createRoom',{name:name.value||'紅方'});side='red'}function join(){roomCode=room.value.trim().toUpperCase();socket.emit('joinRoom',{room:roomCode,name:name.value||'黑方'});side='black';code.textContent=roomCode}function resign(){if(roomCode)socket.emit('resign',{room:roomCode})}
+draw();
+</script></body></html>
