@@ -168,10 +168,6 @@ select.field{appearance:auto}
 <meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
-<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.8</span> <span id="xq-version-status">●</span></div>
-<script>
-(async()=>{try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();const el=document.getElementById('xq-version-status');if(el)el.textContent=d.ok?'● V'+d.version:'● OFFLINE';}catch(e){}})();
-</script>
 
 <div id="splash">
   <div style="width:96px;height:96px;border-radius:50%;background:var(--primary-light);border:4px solid var(--accent);display:flex;align-items:center;justify-content:center;font-size:3rem;font-weight:900;color:var(--accent);font-family:'Noto Serif TC',serif">帥</div>
@@ -2347,22 +2343,6 @@ window.__autoFlip=true;
 let toastTimer=null;
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');if(toastTimer)clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2400);}
 
-/* ============ 後端棋譜直接送入原棋盤 ============ */
-async function loadServerGameQuery(){
-  const id=new URLSearchParams(location.search).get('gameId'); if(!id) return;
-  try{
-    const r=await fetch('/api/games/'+encodeURIComponent(id),{cache:'no-store'}); if(!r.ok) throw new Error('棋譜不存在');
-    const g=await r.json(); const exact=Array.isArray(g.exactMoves)?g.exactMoves:[]; const toks=Array.isArray(g.moves)?g.moves:[];
-    if(exact.length===toks.length && exact.length){ currentMoves=exact.map((m,i)=>({from:m.from,to:m.to,notation:toks[i]||('第'+(i+1)+'步')})); }
-    else if(toks.length){ try{ currentMoves=buildMovesFromNotation(toks); }catch(e){ alert('這筆棋譜只有 WXF 文字記譜，原棋盤無法自動解析：'+e.message); return; } }
-    else { alert('這筆東萍棋譜尚未完成可播放解析。'); return; } currentIndex=0;
-    const title=document.getElementById('boardTitle'); if(title)title.textContent=(g.red||'紅方')+' '+(g.result||'')+' '+(g.black||'黑方');
-    const desc=document.getElementById('descBox'); if(desc)desc.innerHTML='<b>東萍完整棋譜</b><br>'+(g.event||'')+'<br>開局：'+(g.opening||'未分類')+'<br>來源：'+(g.detailUrl?'<a href="'+g.detailUrl.replace(/"/g,'&quot;')+'" target="_blank">東萍原始棋譜頁</a>':'東萍公開索引');
-    renderMovesList(); renderBoard();
-    const q=new URLSearchParams(location.search); q.delete('gameId'); history.replaceState({},'',location.pathname+(q.toString()?'?'+q.toString():''));
-  }catch(e){console.warn('後端棋譜載入失敗',e);}
-}
-
 /* ============ 啟動 ============ */
 refreshImportCats();
 (async function restoreGames(){
@@ -2391,7 +2371,33 @@ refreshImportCats();
 curCat=Object.keys(DATA['先手'])[0];
 loadLine('先手',curCat,0);
 buildCatGrid();
-setTimeout(loadServerGameQuery, 250);
+// V2.8.1：網址帶 ?gameId=xxx 時，改為向後端 API 抓取該筆棋譜並直接顯示在棋盤上（棋譜倉庫「▶ 原棋盤播放」用）
+(async function loadGameFromQuery(){
+  try{
+    const gid=new URLSearchParams(location.search).get('gameId');
+    if(!gid) return;
+    const r=await fetch('/api/games/'+encodeURIComponent(gid));
+    if(!r.ok){ toast('找不到這筆棋譜（ID：'+gid+'）'); return; }
+    const g=await r.json();
+    const tokens=Array.isArray(g.tokens)&&g.tokens.length?g.tokens:(Array.isArray(g.moves)?g.moves.map(m=>typeof m==='string'?m:m.notation).filter(Boolean):[]);
+    if(!tokens.length){ toast('這筆棋譜尚未收錄完整著法，無法在棋盤播放'); return; }
+    const side='先手', cat='☁ 東萍棋庫：'+(g.opening||'未分類');
+    const name=g.name||((g.red||'紅方')+' 對 '+(g.black||'黑方'));
+    const meta={master:true,red:g.red||'',black:g.black||'',year:g.year||'',event:g.event||'',result:g.result||''};
+    const exactMoves=Array.isArray(g.exactMoves)&&g.exactMoves.length===tokens.length?g.exactMoves:null;
+    if(importedGames.some(x=>x.name===name && x.side===side && x.cat===cat)){
+      const idx=DATA[side][cat]?DATA[side][cat].lines.findIndex(l=>l.name===name):-1;
+      if(idx>=0){ curSide=side;curCat=cat; loadLine(side,cat,idx); gotoTab('home'); return; }
+    }
+    const rr=addImportedGame(side,cat,name,tokens,true,meta,exactMoves);
+    if(!rr.ok){ toast('棋譜載入失敗：'+(rr.err||'')); return; }
+    refreshImportCats();
+    curSide=side;curCat=cat;
+    loadLine(side,cat,DATA[side][cat].lines.length-1);
+    gotoTab('home');
+    toast('已從棋譜倉庫載入：'+name);
+  }catch(e){ toast('載入棋譜時發生錯誤：'+e.message); }
+})();
 // 攔截 target=_blank
 document.addEventListener('click',function(e){const a=e.target.closest?e.target.closest('a[target="_blank"]'):null;if(!a||!a.href)return;if(a.href.startsWith('data:'))return;e.preventDefault();e.stopPropagation();openExternal(a.href);},true);
 // 啟動畫面
