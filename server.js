@@ -7,14 +7,18 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Enable CORS and Static files
+// Enable CORS & JSON Parsing
 app.use(cors());
-app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Serve static frontend files from 'public' directory
+app.use(express.static(path.join(__dirname, 'public')));
 
 /**
- * DPXQ Fetch & Parse API Endpoint
- * Resolves CORS and GBK encoding issues when grabbing Chinese chess notation from dpxq.com
+ * DPXQ Game Sync API Endpoint
+ * Resolves CORS and GBK Encoding issues.
+ * ALWAYS returns JSON to prevent 'Unexpected token <' errors in frontend.
  */
 app.get('/api/fetch-dpxq', async (req, res) => {
     try {
@@ -23,22 +27,17 @@ app.get('/api/fetch-dpxq', async (req, res) => {
             return res.status(400).json({ success: false, error: '請提供東萍棋譜網址 (Parameter "url" missing)' });
         }
 
-        // Validate domain
-        if (!targetUrl.includes('dpxq.com')) {
-            return res.status(400).json({ success: false, error: '僅支援東萍大師棋庫 (dpxq.com) 網址' });
-        }
-
-        // Fetch web page as ArrayBuffer to properly handle GBK/GB2312 encoding
+        // Fetch target webpage as raw buffer for GBK decoding
         const response = await axios.get(targetUrl, {
             responseType: 'arraybuffer',
-            timeout: 10000,
+            timeout: 12000,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Referer': 'http://www.dpxq.com/'
             }
         });
 
-        // Decode GBK buffer to String
+        // Decode GBK/GB2312 buffer to UTF-8 String
         const htmlText = iconv.decode(Buffer.from(response.data), 'gbk');
 
         // Extract DhtmlXQ variables using regex
@@ -51,7 +50,7 @@ app.get('/api/fetch-dpxq', async (req, res) => {
         if (!moveListMatch) {
             return res.status(422).json({ 
                 success: false, 
-                error: '解析失敗：未能在該東萍頁面找到棋步資料 (DhtmlXQ_movelist)' 
+                error: '解析失敗：未能在該東萍頁面找到棋步數據 (DhtmlXQ_movelist)' 
             });
         }
 
@@ -65,20 +64,27 @@ app.get('/api/fetch-dpxq', async (req, res) => {
         });
 
     } catch (err) {
-        console.error('[Error] DPXQ Fetch Failed:', err.message);
+        console.error('[DPXQ Fetch Error]:', err.message);
         return res.status(500).json({ 
             success: false, 
-            error: '後端抓取失敗，請確認東萍網址是否正確或伺服器連線狀態',
-            details: err.message 
+            error: '後端代理抓取失敗：' + err.message 
         });
     }
 });
 
-// Fallback to game.html if accessed directly
+/**
+ * Fallback route for unhandled API requests
+ * Returns JSON error instead of HTML 404 page
+ */
+app.use('/api/*', (req, res) => {
+    res.status(404).json({ success: false, error: `找不到 API 端點: ${req.originalUrl}` });
+});
+
+// Default route fallback to repository or game
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'game.html'));
+    res.sendFile(path.join(__dirname, 'public', 'repository.html'));
 });
 
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`Server listening on port ${PORT}`);
 });
