@@ -171,6 +171,7 @@ let syncJob = null;
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
 const DPXQ_HOST_RE = /^https?:\/\/(www\.)?dpxq\.com\//i;
 function isDpxqUrl(url){ return DPXQ_HOST_RE.test(url); }
+function normalizeDpxqUrl(url){ return String(url||'').trim().replace(/^https:\/\//i,'http://'); }
 function decodeHtml(s){return String(s||'').replace(/&nbsp;|&#160;/gi,' ').replace(/&amp;/gi,'&').replace(/&quot;/gi,'"').replace(/&#39;/gi,"'").replace(/&lt;/gi,'<').replace(/&gt;/gi,'>');}
 function stripHtml(s){return decodeHtml(String(s||'').replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim());}
 
@@ -371,7 +372,7 @@ async function runSync(job){
 }
 
 app.get('/api/dpxq/test',async(req,res)=>{
-  const url=String(req.query.url||'http://www.dpxq.com/').trim();
+  const url=normalizeDpxqUrl(req.query.url||'http://www.dpxq.com/');
   if(!isDpxqUrl(url))return res.status(400).json({ok:false,error:'只允許 dpxq.com 網址'});
   const t0=Date.now();
   try{
@@ -395,8 +396,8 @@ app.get('/api/dpxq/test',async(req,res)=>{
 app.get('/api/dpxq/source',(req,res)=>res.json({name:'東萍象棋網',url:'http://www.dpxq.com/',mode:'public-index-detail-sync',message:'同步公開索引與公開棋譜詳細頁；保留來源 URL。'}));
 app.get('/api/dpxq/sync/status',(req,res)=>{if(!syncJob)return res.json({status:'idle',progress:0});const j={...syncJob};delete j.cancelled;res.json(j)});
 app.post('/api/dpxq/sync/cancel',(req,res)=>{if(!syncJob||!['running','queued'].includes(syncJob.status))return res.json({ok:true,status:syncJob?.status||'idle'});syncJob.cancelled=true;syncJob.status='cancelled';res.json({ok:true});});
-app.post('/api/dpxq/sync/start',(req,res)=>{if(syncJob&&['queued','running'].includes(syncJob.status))return res.status(409).json({error:'已有同步工作正在執行',jobId:syncJob.id});const url=String(req.body?.url||'').trim(),player=String(req.body?.player||'').trim(),maxPages=Math.max(1,Math.min(Number(req.body?.maxPages||20),100));if(!isDpxqUrl(url))return res.status(400).json({error:'請提供 dpxq.com 網址'});syncJob={id:Date.now().toString(36).toUpperCase(),status:'queued',url,player,maxPages,page:0,pagesDone:0,pagesTotal:0,progress:0,found:0,added:0,updated:0,players:db.players.length,games:db.games.length,playable:0,indexOnly:0,detailFound:0,detailDone:0,detailTotal:0,detailParsed:0,errors:0,validationErrors:0,lastError:'',currentUrl:'',discovered:1,lastBatch:[],startedAt:new Date().toISOString(),finishedAt:null,error:null,cancelled:false};runSync(syncJob);res.json({ok:true,jobId:syncJob.id,version:APP_VERSION});});
-app.post('/api/dpxq/import',async(req,res)=>{const url=String(req.body?.url||'').trim();if(!isDpxqUrl(url))return res.status(400).json({error:'請提供 dpxq.com 網址'});try{const html=await fetchText(url);const items=parseDpxqIndex(html,url);const r=importIndexItems(items);res.json({ok:true,url,found:items.length,...r,players:db.players.length,games:db.games.length,items:items.slice(0,20)});}catch(e){res.status(502).json({error:'東萍索引抓取失敗：'+e.message});}});
+app.post('/api/dpxq/sync/start',(req,res)=>{if(syncJob&&['queued','running'].includes(syncJob.status))return res.status(409).json({error:'已有同步工作正在執行',jobId:syncJob.id});const url=normalizeDpxqUrl(req.body?.url),player=String(req.body?.player||'').trim(),maxPages=Math.max(1,Math.min(Number(req.body?.maxPages||20),100));if(!isDpxqUrl(url))return res.status(400).json({error:'請提供 dpxq.com 網址'});syncJob={id:Date.now().toString(36).toUpperCase(),status:'queued',url,player,maxPages,page:0,pagesDone:0,pagesTotal:0,progress:0,found:0,added:0,updated:0,players:db.players.length,games:db.games.length,playable:0,indexOnly:0,detailFound:0,detailDone:0,detailTotal:0,detailParsed:0,errors:0,validationErrors:0,lastError:'',currentUrl:'',discovered:1,lastBatch:[],startedAt:new Date().toISOString(),finishedAt:null,error:null,cancelled:false};runSync(syncJob);res.json({ok:true,jobId:syncJob.id,version:APP_VERSION});});
+app.post('/api/dpxq/import',async(req,res)=>{const url=normalizeDpxqUrl(req.body?.url);if(!isDpxqUrl(url))return res.status(400).json({error:'請提供 dpxq.com 網址'});try{const html=await fetchText(url);const items=parseDpxqIndex(html,url);const r=importIndexItems(items);res.json({ok:true,url,found:items.length,...r,players:db.players.length,games:db.games.length,items:items.slice(0,20)});}catch(e){res.status(502).json({error:'東萍索引抓取失敗：'+e.message});}});
 
 const rooms=new Map();
 function roomCode(){let c;do{c=Math.random().toString(36).slice(2,8).toUpperCase();}while(rooms.has(c));return c;}
