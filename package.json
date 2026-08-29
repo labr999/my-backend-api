@@ -1,17 +1,18 @@
 {
-  "name": "xiangqi-web-suite-v2",
-  "version": "2.8.1",
-  "private": true,
-  "description": "象棋小棋聖：原始開局譜＋名人棋手庫＋棋譜倉庫＋線上對弈＋東萍公開索引自動分頁同步、去重、棋手專屬同步與進度條",
+  "name": "chinese-chess-dpxq-sync",
+  "version": "1.0.0",
+  "description": "Chinese Chess Viewer with DPXQ Sync Backend",
+  "main": "server.js",
   "scripts": {
-    "start": "node server-patch.js && node server.js",
-    "dev": "node --watch server-patch.js && node server.js"
-  },
-  "engines": {
-    "node": ">=18"
+    "start": "node server.js"
   },
   "dependencies": {
-    "express": "^5.1.0",
-    "socket.io": "^4.8.1"
+    "axios": "^1.6.7",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "iconv-lite": "^0.6.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
