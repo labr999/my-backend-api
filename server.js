@@ -7,56 +7,72 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Enable CORS & JSON Parsing
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Serve static frontend files from 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 
 /**
  * DPXQ Game Sync API Endpoint
- * Resolves CORS and GBK Encoding issues.
- * ALWAYS returns JSON to prevent 'Unexpected token <' errors in frontend.
  */
 app.get('/api/fetch-dpxq', async (req, res) => {
+    let targetUrl = req.query.url;
+    if (!targetUrl) {
+        return res.status(400).json({ success: false, error: '請提供東萍棋譜網址' });
+    }
+
     try {
-        const targetUrl = req.query.url;
-        if (!targetUrl) {
-            return res.status(400).json({ success: false, error: '請提供東萍棋譜網址 (Parameter "url" missing)' });
+        // Automatically add http:// if missing
+        if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+            targetUrl = 'http://' + targetUrl;
         }
 
-        // Fetch target webpage as raw buffer for GBK decoding
+        console.log('[Fetching URL]:', targetUrl);
+
+        // Fetch page content
         const response = await axios.get(targetUrl, {
             responseType: 'arraybuffer',
-            timeout: 12000,
+            timeout: 15000,
+            validateStatus: status => status < 500, // Handle non-200 gracefully
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Referer': 'http://www.dpxq.com/'
             }
         });
 
-        // Decode GBK/GB2312 buffer to UTF-8 String
+        if (response.status >= 400) {
+            return res.status(response.status).json({ 
+                success: false, 
+                error: `東萍伺服器回應錯誤狀態碼 HTTP ${response.status}` 
+            });
+        }
+
+        // Decode GBK
         const htmlText = iconv.decode(Buffer.from(response.data), 'gbk');
 
-        // Extract DhtmlXQ variables using regex
-        const moveListMatch = htmlText.match(/DhtmlXQ_movelist\s*=\s*['"]([^'"]+)['"]/i);
-        const titleMatch = htmlText.match(/DhtmlXQ_title\s*=\s*['"]([^'"]+)['"]/i);
-        const initBoardMatch = htmlText.match(/DhtmlXQ_b\s*=\s*['"]([^'"]+)['"]/i);
-        const redPlayerMatch = htmlText.match(/DhtmlXQ_red\s*=\s*['"]([^'"]+)['"]/i);
-        const blackPlayerMatch = htmlText.match(/DhtmlXQ_black\s*=\s*['"]([^'"]+)['"]/i);
+        // Regex patterns matching various DPXQ output formats (h5.asp, h5dpxq.asp, mobile, etc.)
+        const moveListMatch = htmlText.match(/DhtmlXQ_movelist\s*=\s*['"]([^'"]*)['"]/i) ||
+                              htmlText.match(/movelist\s*=\s*['"]([^'"]*)['"]/i) ||
+                              htmlText.match(/DhtmlXQ_m\s*=\s*['"]([^'"]*)['"]/i);
 
-        if (!moveListMatch) {
+        const titleMatch = htmlText.match(/DhtmlXQ_title\s*=\s*['"]([^'"]*)['"]/i) ||
+                           htmlText.match(/<title>(.*?)<\/title>/i);
+
+        const initBoardMatch = htmlText.match(/DhtmlXQ_b\s*=\s*['"]([^'"]*)['"]/i);
+        const redPlayerMatch = htmlText.match(/DhtmlXQ_red\s*=\s*['"]([^'"]*)['"]/i);
+        const blackPlayerMatch = htmlText.match(/DhtmlXQ_black\s*=\s*['"]([^'"]*)['"]/i);
+
+        if (!moveListMatch || !moveListMatch[1]) {
             return res.status(422).json({ 
                 success: false, 
-                error: '解析失敗：未能在該東萍頁面找到棋步數據 (DhtmlXQ_movelist)' 
+                error: '解析失敗：該網址非單一棋譜頁面（可能為列表頁）或未找到著法數據 (movelist)' 
             });
         }
 
         return res.json({
             success: true,
-            title: titleMatch ? titleMatch[1].trim() : '未命名棋譜',
+            title: titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : '未命名棋譜',
             red: redPlayerMatch ? redPlayerMatch[1].trim() : '紅方',
             black: blackPlayerMatch ? blackPlayerMatch[1].trim() : '黑方',
             initBoard: initBoardMatch ? initBoardMatch[1].trim() : '',
@@ -64,27 +80,24 @@ app.get('/api/fetch-dpxq', async (req, res) => {
         });
 
     } catch (err) {
-        console.error('[DPXQ Fetch Error]:', err.message);
-        return res.status(500).json({ 
+        console.error('[DPXQ Fetch Exception]:', err.message);
+        return res.status(200).json({ 
             success: false, 
-            error: '後端代理抓取失敗：' + err.message 
+            error: `抓取失敗 (${err.code || 'REQUEST_FAILED'}): ${err.message}` 
         });
     }
 });
 
-/**
- * Fallback route for unhandled API requests
- * Returns JSON error instead of HTML 404 page
- */
+// Catch-all API Route handler
 app.use('/api/*', (req, res) => {
     res.status(404).json({ success: false, error: `找不到 API 端點: ${req.originalUrl}` });
 });
 
-// Default route fallback to repository or game
-app.get('/', (req, res) => {
+// Static SPA Fallback
+app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'repository.html'));
 });
 
 app.listen(PORT, () => {
-    console.log(`Server listening on port ${PORT}`);
+    console.log(`Server is running on port ${PORT}`);
 });
