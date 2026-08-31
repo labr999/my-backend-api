@@ -136,5 +136,6 @@ app.post('/api/dpxq/import',async(q,s)=>{if(syncJob?.running)return s.status(409
 
 app.get('/api/opening/classify',(q,s)=>s.json({opening:classifyOpening(String(q.query.moves||'').split(/\s+/))}));
 
-app.get('*',(req,res)=>res.sendFile(path.join(ROOT,'public','index.html')));
+// Express 5：不能使用 app.get('*')，改用最後一層 middleware 作為 SPA fallback。
+app.use((req,res)=>res.sendFile(path.join(ROOT,'public','index.html')));
 server.listen(PORT,'0.0.0.0',()=>console.log(`xiangqi-web-suite ${DISPLAY_VERSION} listening on ${PORT}`));
