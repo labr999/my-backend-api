@@ -1,44 +1,33 @@
-# 象棋小棋聖 V2.2
+# 象棋小棋聖 V2.9.2
 
-## 這版修正了什麼
+## 功能
+- 東萍公開棋譜網址單盤匯入 / 搜尋頁解析
+- 自動繁簡轉換與 GBK 編碼支援
+- 東萍大師棋譜同步（預設最多 20 頁、100 盤）
+- DhtmlXQ / WXF 完整擷取與棋規合法性校驗
+- 自動去重
+- 棋手自動加入棋手庫
+- 自動開局分類
+- 完整 rawExport、DhtmlXQ binit/movelist、detailUrl 保存
+- exactMoves 可播放時直接進原棋盤
+- /api/health 顯示 V2.9.2
 
-1. **完整恢復原始 `index.html`**：不再用簡化版首頁取代原本的象棋開局譜，因此原本的開局分類、棋盤、記譜、匯入、IndexedDB 儲存與引擎功能都保留。
-2. 新增 `repository.html`：名人／大師棋譜搜尋。
-3. 新增 `players.html`：棋手搜尋。
-4. 新增 `game.html`：棋譜詳情。
-5. 新增 `play.html`：Socket.IO 線上房間對弈。
-6. 新增 `history-migrate.html`：從舊版 `file://` 的 `xiangqiDB` / `localStorage` 救援歷史棋譜，再同步到 V2 後端。
-7. 後端使用 JSON 持久化，不使用 `better-sqlite3`，降低 Windows 安裝失敗機率。
-8. `start.bat` 使用 PowerShell `Start-Process` 開啟瀏覽器，避免部分 Windows 環境 `start "" URL` 無法自動開頁。
+## Windows
+雙擊 `start.bat`。瀏覽器會自動開啟 http://localhost:3000/。
 
-## 啟動
+## Render
+建議直接以 Docker 部署；`render.yaml` 已包含 health check 與 `/app/data` persistent disk。GitHub push 後 Render 自動部署。
 
-1. 安裝 Node.js 18 或以上。
-2. 解壓縮本資料夾。
-3. 雙擊 **`一鍵啟動.bat`**。
-4. 預期自動開啟 `http://127.0.0.1:3000/`。
+## 東萍使用方式
+在「東萍大師棋譜匯入」貼上公開棋譜詳細頁或公開搜尋頁網址，按「測試連線」後按「單盤匯入」。
 
-如果瀏覽器沒有自動開啟，手動輸入 `http://localhost:3000/` 即可；這不代表 Server 失敗，只代表 Windows 沒有啟動預設瀏覽器。
+## V2.9.2 定向同步規則與修復
+- 不提供全站/全庫同步。
+- 預設大師：王天一、許銀川、呂欽、胡榮華、柳大華、曹岩磊、趙國榮、趙鑫鑫、陶漢明、葛振衣、謝靖、趙奕帆、劉安生、吳貴臨、李思誼、孟繁睿、馮家俊、賴理、楊官璘、蔣川、汪洋、鄭惟桐、洪智、徐天紅、孫勇征。
+- 可輸入其他棋手姓名，按「同步此棋手」；只處理該棋手。
+- 東萍同步入口統一使用 `http://www.dpxq.com/hldcg/search/`。
+- **每次棋手同步預設最多 20 頁、100 盤**，可用 `DPXQ_MAX_PAGES`、`DPXQ_MAX_GAMES` 環境變數調整。
+- 修復繁體中文棋手查詢簡體資料庫查無棋譜的問題。
+- 修復東萍搜尋分頁與 `javascript:view(...)` 連結解析。
+- 修復 DhtmlXQ 標準開局空 `binit` 與象/兵河界合法性判斷。
 
-## 舊版歷史救援
-
-如果原本的棋譜歷史是在舊 `index.html` 以 `file://` 開啟時建立：
-
-1. 先啟動 V2。
-2. 用舊版 `index.html` 所在的檔案位置開啟本包的 `public/history-migrate.html`，讓網址列顯示 `file:///...`。
-3. 按「讀取舊歷史」。
-4. 按「同步到 V2 後端」。
-5. 回到 `http://localhost:3000/repository.html` 搜尋。
-6. 回到首頁按「☁ 同步後端棋庫」，可把救援的歷史重新放回原本棋譜播放介面。
-
-> 如果瀏覽器的 IndexedDB/localStorage 已被清除，網站程式無法從已刪除的瀏覽器資料恢復。
-
-## 棋譜資料
-
-本包預置少量公開名人棋譜與索引資料作為搜尋功能的可運作示範，包括王天一、鄭惟桐、許銀川、洪智、楊官璘、胡榮華等。部分棋譜為可播放完整著法，部分為公開索引項目；頁面會明確標示「尚未收錄完整著法」。
-
-東萍象棋網是來源索引入口：<https://www.dpxq.com/>
-
-## GitHub
-
-把整個資料夾上傳到 GitHub 後，可使用 Render / Railway / 自己的 Node.js 主機部署後端；GitHub Pages 僅適合純前端，不能直接執行本包的 Socket.IO/Express 後端。
