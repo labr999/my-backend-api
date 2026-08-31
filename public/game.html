@@ -1,4 +1,745 @@
-<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>棋譜播放 V2.9.2</title><style>body{font-family:system-ui,"Microsoft JhengHei";background:#f5efe4;margin:0;color:#2c2119}header{background:#8d1515;color:#fff;padding:14px 22px}.wrap{max-width:1050px;margin:20px auto;padding:0 12px}.box{background:#fff;border-radius:14px;border:1px solid #decfbc;padding:15px;margin-bottom:14px}.board{width:min(82vw,720px);aspect-ratio:9/10;margin:auto;background:#e9c98f;position:relative;border:8px solid #7a4a23;box-sizing:border-box}.line{position:absolute;background:#51351f}.h{height:1px;left:5.5%;right:5.5%}.v{width:1px;top:5%;bottom:5%}.piece{position:absolute;width:8.5%;aspect-ratio:1;border-radius:50%;transform:translate(-50%,-50%);display:grid;place-items:center;font-size:clamp(18px,3vw,32px);font-weight:700;background:#f5e7c8;border:2px solid #5a341e}.red{color:#b21e16}.black{color:#222}.controls button{padding:10px 16px;margin:4px;border:0;border-radius:8px;background:#8d1515;color:white}.moves{line-height:2}.muted{color:#756b61}</style></head><body><header>象棋小棋聖 V2.9.2　｜　原棋盤播放</header><div class="wrap"><div class="box"><h2 id="name"></h2><div id="info" class="muted"></div></div><div class="box"><div id="board" class="board"></div><div class="controls"><button onclick="first()">⏮ 第一手</button><button onclick="prev()">◀ 上一步</button><button onclick="next()">下一步 ▶</button><button onclick="last()">最後一手 ⏭</button><button onclick="auto()">▶ 自動播放</button></div><div id="mv" class="moves"></div></div></div><script>
-let g={};let idx=0;const init=[['車','r',0,9],['馬','r',1,9],['相','r',2,9],['仕','r',3,9],['帥','r',4,9],['仕','r',5,9],['相','r',6,9],['馬','r',7,9],['車','r',8,9],['砲','r',1,7],['砲','r',7,7],['兵','r',0,6],['兵','r',2,6],['兵','r',4,6],['兵','r',6,6],['兵','r',8,6],['車','b',0,0],['馬','b',1,0],['象','b',2,0],['士','b',3,0],['將','b',4,0],['士','b',5,0],['象','b',6,0],['馬','b',7,0],['車','b',8,0],['砲','b',1,2],['砲','b',7,2],['卒','b',0,3],['卒','b',2,3],['卒','b',4,3],['卒','b',6,3],['卒','b',8,3]];let pieces=[];function xy(c,r){return [5.5+c*11.125,5+r*10]};function render(){board.innerHTML='';for(let i=0;i<10;i++){const h=document.createElement('div');h.className='line h';h.style.top=(5+i*10)+'%';board.appendChild(h)}for(let i=0;i<9;i++){const v=document.createElement('div');v.className='line v';v.style.left=(5.5+i*11.125)+'%';if(i>0&&i<8)v.style.top='5%';board.appendChild(v)}pieces.forEach(p=>{if(!p.alive)return;const e=document.createElement('div');e.className='piece '+(p.side==='r'?'red':'black');e.textContent=p.type;const [x,y]=xy(p.col,p.row);e.style.left=x+'%';e.style.top=y+'%';board.appendChild(e)});mv.textContent=(g.tokens||[]).map((x,i)=>`${i+1}. ${x}`).join('　')}
-function reset(){pieces=init.map(x=>({type:x[0],side:x[1],col:x[2],row:x[3],alive:true}));idx=0;apply();render()}function apply(){pieces=init.map(x=>({type:x[0],side:x[1],col:x[2],row:x[3],alive:true}));for(let i=0;i<idx;i++){const m=g.exactMoves?.[i]||g.moves?.[i];if(!m)break;const p=pieces.find(p=>p.alive&&p.col===m.from[0]&&p.row===m.from[1]);if(!p)continue;const cap=pieces.find(x=>x.alive&&x.col===m.to[0]&&x.row===m.to[1]&&x!==p);if(cap)cap.alive=false;p.col=m.to[0];p.row=m.to[1]}}function first(){idx=0;apply();render()}function prev(){idx=Math.max(0,idx-1);apply();render()}function next(){idx=Math.min(g.exactMoves?.length||g.moves?.length||0,idx+1);apply();render()}function last(){idx=g.exactMoves?.length||g.moves?.length||0;apply();render()}function auto(){let t=setInterval(()=>{if(idx>=(g.exactMoves?.length||g.moves?.length||0)){clearInterval(t);return}next()},700)}async function boot(){g=await (await fetch('/api/games/'+new URLSearchParams(location.search).get('id'))).json();name.textContent=`${g.red}　${g.result}　${g.black}`;info.textContent=`${g.year||''} ${g.event||''}　開局：${g.opening||'未分類'}　格式：${g.format||''}　${g.exactMoves?.length||0} 手`;reset()}boot();
-</script></body></html>
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>象棋小棋聖 V2.9.2 ｜ 原棋盤打譜播放</title>
+  <style>
+    :root {
+      --primary: #8d1515;
+      --primary-hover: #a81c1c;
+      --bg: #f4ecdf;
+      --card-bg: #ffffff;
+      --text: #2d241c;
+      --muted: #786c5e;
+      --border: #dfd0be;
+      --wood: #f1d7a5;
+      --wood-dark: #844c1a;
+      --line: #42250d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei", "PingFang TC", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    header {
+      background: var(--primary);
+      color: #fff;
+      padding: 12px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    header a { color: #fff; text-decoration: none; font-weight: bold; }
+    .header-links a {
+      margin-left: 15px;
+      color: #f7d6d6;
+      font-size: 14px;
+      padding: 4px 10px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 6px;
+    }
+    .header-links a:hover { background: rgba(255,255,255,0.25); color: #fff; }
+
+    main {
+      max-width: 1200px;
+      margin: 18px auto;
+      padding: 0 16px;
+      display: grid;
+      grid-template-columns: minmax(360px, 600px) 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+    @media (max-width: 960px) {
+      main { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+      box-shadow: 0 3px 12px rgba(0,0,0,0.05);
+    }
+
+    /* 棋盤區域 */
+    .board-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .board-wrapper {
+      width: 100%;
+      max-width: 540px;
+      aspect-ratio: 560 / 620;
+      position: relative;
+      background: #e8c88c radial-gradient(circle at 50% 50%, #f6deb4 0%, #e1bb77 100%);
+      border: 10px solid #5a3212;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(66, 37, 13, 0.35), inset 0 0 15px rgba(0,0,0,0.15);
+      user-select: none;
+      overflow: hidden;
+    }
+    .board-svg {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+
+    /* 棋子樣式 */
+    .piece {
+      position: absolute;
+      width: 9.2%;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      display: grid;
+      place-items: center;
+      font-size: clamp(17px, 3.4vw, 30px);
+      font-weight: 900;
+      font-family: "Kaiti TC", "STKaiti", "DFKai-SB", "BiauKai", "Microsoft JhengHei", serif;
+      background: radial-gradient(circle at 35% 35%, #fffbf0 0%, #ecd6ad 70%, #cbb181 100%);
+      border: 2px solid #633918;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.35), inset 0 0 0 2px #fef4dd, inset 0 0 4px rgba(0,0,0,0.2);
+      transition: left 0.22s ease-out, top 0.22s ease-out;
+      cursor: default;
+      z-index: 10;
+    }
+    .piece.red {
+      color: #bb1717;
+      text-shadow: 0 1px 1px rgba(255,255,255,0.8), 0 -1px 1px rgba(0,0,0,0.2);
+    }
+    .piece.black {
+      color: #1a1a1a;
+      text-shadow: 0 1px 1px rgba(255,255,255,0.8), 0 -1px 1px rgba(0,0,0,0.3);
+    }
+
+    /* 最後一手標記 */
+    .move-marker {
+      position: absolute;
+      width: 9.6%;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 5;
+    }
+    .move-marker.from {
+      border: 2px dashed #b92b27;
+      background: rgba(185, 43, 39, 0.15);
+      animation: pulse 1.8s infinite;
+    }
+    .move-marker.to {
+      border: 2.5px solid #2e7d32;
+      background: rgba(46, 125, 50, 0.2);
+      box-shadow: 0 0 10px rgba(46, 125, 50, 0.6);
+    }
+    @keyframes pulse {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.8; }
+      50% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.4; }
+    }
+
+    /* 控制按鈕列 */
+    .controls-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+      justify-content: center;
+      width: 100%;
+    }
+    button.btn {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: background 0.15s, transform 0.1s;
+    }
+    button.btn:hover { background: var(--primary-hover); }
+    button.btn:active { transform: scale(0.97); }
+    button.btn.btn-auto {
+      background: #237b38;
+    }
+    button.btn.btn-auto.active {
+      background: #b92b27;
+    }
+    .speed-select {
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #fff;
+      font-size: 13px;
+      font-weight: bold;
+      color: var(--text);
+    }
+
+    /* 對局資訊 */
+    .match-header {
+      margin-bottom: 15px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .match-players {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 20px;
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+    .match-players .player-red { color: #bb1717; }
+    .match-players .player-black { color: #222; }
+    .match-result-badge {
+      background: #e8d8c3;
+      padding: 3px 12px;
+      border-radius: 99px;
+      font-size: 14px;
+      color: #533b24;
+    }
+    .match-meta {
+      font-size: 13px;
+      color: var(--muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    /* 進度條 */
+    .progress-bar-wrap {
+      width: 100%;
+      height: 8px;
+      background: #e5d8c6;
+      border-radius: 99px;
+      overflow: hidden;
+      margin: 12px 0 6px;
+    }
+    .progress-bar-inner {
+      height: 100%;
+      background: var(--primary);
+      width: 0%;
+      transition: width 0.15s;
+    }
+
+    /* 棋譜列表 */
+    .moves-table-wrap {
+      max-height: 480px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fdfaf6;
+    }
+    table.moves-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    table.moves-table th {
+      background: #eedfcb;
+      color: #4b3621;
+      padding: 8px 10px;
+      text-align: left;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    table.moves-table td {
+      padding: 6px 10px;
+      border-bottom: 1px solid #f1e4d3;
+    }
+    .step-btn {
+      display: inline-block;
+      width: 100%;
+      padding: 4px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .step-btn:hover {
+      background: #eadbc5;
+    }
+    .step-btn.active {
+      background: #8d1515;
+      color: #fff;
+      font-weight: bold;
+    }
+    .step-btn.red-move { color: #9f1313; }
+    .step-btn.red-move.active { color: #fff; }
+    .step-btn.black-move { color: #222; }
+    .step-btn.black-move.active { color: #fff; }
+
+    .status-msg {
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--muted);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <a href="index.html">象棋小棋聖</a>
+      <span style="opacity: 0.8; font-size: 14px; margin-left: 6px;">V2.9.2</span>
+    </div>
+    <div class="header-links">
+      <a href="index.html">🏠 回首頁</a>
+      <a href="repository.html">👑 棋手庫</a>
+      <a id="dpxqLink" href="http://www.dpxq.com/" target="_blank">🌐 東萍原始頁</a>
+    </div>
+  </header>
+
+  <main>
+    <!-- 左側：棋盤與控制 -->
+    <div class="card board-container">
+      <div class="board-wrapper" id="boardWrapper">
+        <!-- SVG 傳統棋盤繪製 -->
+        <svg class="board-svg" viewBox="0 0 560 620" xmlns="http://www.w3.org/2000/svg">
+          <!-- 雙外框線 -->
+          <rect x="32" y="32" width="496" height="556" rx="4" fill="none" stroke="#42250d" stroke-width="3.5" />
+          <rect x="40" y="40" width="480" height="540" fill="none" stroke="#42250d" stroke-width="1.8" />
+
+          <!-- 10 條橫線 (y = 0..9) -->
+          <line x1="40" y1="40" x2="520" y2="40" stroke="#42250d" stroke-width="1.4" />
+          <line x1="40" y1="100" x2="520" y2="100" stroke="#42250d" stroke-width="1.4" />
+          <line x1="40" y1="160" x2="520" y2="160" stroke="#42250d" stroke-width="1.4" />
+          <line x1="40" y1="220" x2="520" y2="220" stroke="#42250d" stroke-width="1.4" />
+          <line x1="40" y1="280" x2="520" y2="280" stroke="#42250d" stroke-width="1.4" />
+          <line x1="40" y1="340" x2="520" y2="340" stroke="#42250d" stroke-width="1.4" />
+          <line x1="40" y1="400" x2="520" y2="400" stroke="#42250d" stroke-width="1.4" />
+          <line x1="40" y1="460" x2="520" y2="460" stroke="#42250d" stroke-width="1.4" />
+          <line x1="40" y1="520" x2="520" y2="520" stroke="#42250d" stroke-width="1.4" />
+          <line x1="40" y1="580" x2="520" y2="580" stroke="#42250d" stroke-width="1.4" />
+
+          <!-- 邊界兩側縱線 (貫穿全盤) -->
+          <line x1="40" y1="40" x2="40" y2="580" stroke="#42250d" stroke-width="1.8" />
+          <line x1="520" y1="40" x2="520" y2="580" stroke="#42250d" stroke-width="1.8" />
+
+          <!-- 中間 7 條縱線 (在楚河漢界中斷) -->
+          <!-- 上半盤 (黑方陣營: y=40 到 y=280) -->
+          <line x1="100" y1="40" x2="100" y2="280" stroke="#42250d" stroke-width="1.4" />
+          <line x1="160" y1="40" x2="160" y2="280" stroke="#42250d" stroke-width="1.4" />
+          <line x1="220" y1="40" x2="220" y2="280" stroke="#42250d" stroke-width="1.4" />
+          <line x1="280" y1="40" x2="280" y2="280" stroke="#42250d" stroke-width="1.4" />
+          <line x1="340" y1="40" x2="340" y2="280" stroke="#42250d" stroke-width="1.4" />
+          <line x1="400" y1="40" x2="400" y2="280" stroke="#42250d" stroke-width="1.4" />
+          <line x1="460" y1="40" x2="460" y2="280" stroke="#42250d" stroke-width="1.4" />
+
+          <!-- 下半盤 (紅方陣營: y=340 到 y=580) -->
+          <line x1="100" y1="340" x2="100" y2="580" stroke="#42250d" stroke-width="1.4" />
+          <line x1="160" y1="340" x2="160" y2="580" stroke="#42250d" stroke-width="1.4" />
+          <line x1="220" y1="340" x2="220" y2="580" stroke="#42250d" stroke-width="1.4" />
+          <line x1="280" y1="340" x2="280" y2="580" stroke="#42250d" stroke-width="1.4" />
+          <line x1="340" y1="340" x2="340" y2="580" stroke="#42250d" stroke-width="1.4" />
+          <line x1="400" y1="340" x2="400" y2="580" stroke="#42250d" stroke-width="1.4" />
+          <line x1="460" y1="340" x2="460" y2="580" stroke="#42250d" stroke-width="1.4" />
+
+          <!-- 九宮格斜線 (黑方宮 & 紅方宮) -->
+          <line x1="220" y1="40" x2="340" y2="160" stroke="#42250d" stroke-width="1.4" />
+          <line x1="340" y1="40" x2="220" y2="160" stroke="#42250d" stroke-width="1.4" />
+          <line x1="220" y1="460" x2="340" y2="580" stroke="#42250d" stroke-width="1.4" />
+          <line x1="340" y1="460" x2="220" y2="580" stroke="#42250d" stroke-width="1.4" />
+
+          <!-- 楚河 漢界 典雅楷書 -->
+          <text x="145" y="318" font-family="'Kaiti TC', 'STKaiti', 'DFKai-SB', 'BiauKai', serif" font-size="28" font-weight="bold" fill="#633918" letter-spacing="12">楚河</text>
+          <text x="355" y="318" font-family="'Kaiti TC', 'STKaiti', 'DFKai-SB', 'BiauKai', serif" font-size="28" font-weight="bold" fill="#633918" letter-spacing="12">漢界</text>
+
+          <!-- 座標標記 (上：1~9；下：九~一) -->
+          <g id="coordLabels" font-family="sans-serif" font-size="13" font-weight="bold" fill="#7a4a23" text-anchor="middle">
+            <text x="40" y="24">1</text><text x="100" y="24">2</text><text x="160" y="24">3</text>
+            <text x="220" y="24">4</text><text x="280" y="24">5</text><text x="340" y="24">6</text>
+            <text x="400" y="24">7</text><text x="460" y="24">8</text><text x="520" y="24">9</text>
+
+            <text x="40" y="608">九</text><text x="100" y="608">八</text><text x="160" y="608">七</text>
+            <text x="220" y="608">六</text><text x="280" y="608">五</text><text x="340" y="608">四</text>
+            <text x="400" y="608">三</text><text x="460" y="608">二</text><text x="520" y="608">一</text>
+          </g>
+        </svg>
+
+        <!-- 棋子層與標記層 (由 JS 動態更新) -->
+        <div id="markersLayer"></div>
+        <div id="piecesLayer"></div>
+      </div>
+
+      <!-- 控制按鈕 -->
+      <div class="controls-bar">
+        <button class="btn" onclick="goToStep(0)" title="第一步 (Home)">⏮ 第一手</button>
+        <button class="btn" onclick="stepMove(-1)" title="上一步 (←)">◀ 上一手</button>
+        <button class="btn btn-auto" id="btnAuto" onclick="toggleAuto()" title="自動播放 (Space)">▶ 自動播放</button>
+        <button class="btn" onclick="stepMove(1)" title="下一步 (→)">下一手 ▶</button>
+        <button class="btn" onclick="goToStep(totalMoves)" title="最後一步 (End)">最後一手 ⏭</button>
+        <button class="btn" onclick="toggleFlip()" title="旋轉棋盤視角">🔄 翻轉視角</button>
+        <select class="speed-select" id="speedSelect" onchange="changeSpeed()">
+          <option value="1500">慢速 (1.5s)</option>
+          <option value="800" selected>標準 (0.8s)</option>
+          <option value="400">快速 (0.4s)</option>
+        </select>
+      </div>
+      <div class="status-msg" id="statusMsg">鍵盤快捷鍵：← 上一手 ｜ → 下一手 ｜ 空白鍵 播放/暫停</div>
+    </div>
+
+    <!-- 右側：對局資訊與棋譜列表 -->
+    <div class="card">
+      <div class="match-header">
+        <div class="match-players">
+          <span class="player-red" id="redName">紅方</span>
+          <span class="match-result-badge" id="matchResult">對局進行中</span>
+          <span class="player-black" id="blackName">黑方</span>
+        </div>
+        <div class="match-meta">
+          <span id="matchEvent">賽事：未知</span>
+          <span id="matchDate">時間：未知</span>
+          <span id="matchOpening">開局：未分類</span>
+          <span id="matchMovesCount">總手數：0 手</span>
+        </div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-inner" id="progressInner"></div>
+        </div>
+      </div>
+
+      <h3>📜 對局棋譜紀錄</h3>
+      <div class="moves-table-wrap" id="movesTableWrap">
+        <table class="moves-table">
+          <thead>
+            <tr>
+              <th style="width: 55px; text-align: center;">回合</th>
+              <th style="width: 45%;">🔴 紅方</th>
+              <th style="width: 45%;">⚫ 黑方</th>
+            </tr>
+          </thead>
+          <tbody id="movesTbody">
+            <tr><td colspan="3" style="text-align:center; padding:20px; color:#888;">載入棋譜中…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // 棋子定義與全域變數
+    const TYPE_CHARS = {
+      0:'車', 1:'馬', 2:'相', 3:'仕', 4:'帥', 5:'仕', 6:'相', 7:'馬', 8:'車', 9:'砲', 10:'砲', 11:'兵', 12:'兵', 13:'兵', 14:'兵', 15:'兵',
+      16:'車', 17:'馬', 18:'象', 19:'士', 20:'將', 21:'士', 22:'象', 23:'馬', 24:'車', 25:'砲', 26:'砲', 27:'卒', 28:'卒', 29:'卒', 30:'卒', 31:'卒'
+    };
+    const DEFAULT_BINIT = '0919293949596979891777062646668600102030405060708012720323436383';
+
+    let gameData = null;
+    let currentStep = 0;
+    let totalMoves = 0;
+    let movesList = [];
+    let tokensList = [];
+    let initialPieces = [];
+    let piecesState = [];
+    let autoTimer = null;
+    let playSpeed = 800;
+    let isFlipped = false;
+
+    // 將 binit 字串轉換為初始棋子陣列
+    function parseBinit(binitStr) {
+      const s = String(binitStr || DEFAULT_BINIT).replace(/[^0-9]/g, '');
+      const pieces = [];
+      for (let i = 0; i < 32; i++) {
+        const c = Number(s[i * 2]), r = Number(s[i * 2 + 1]);
+        const alive = (c >= 0 && c <= 8 && r >= 0 && r <= 9);
+        pieces.push({
+          id: i,
+          side: i < 16 ? 'r' : 'b',
+          type: TYPE_CHARS[i],
+          col: alive ? c : -1,
+          row: alive ? r : -1,
+          alive
+        });
+      }
+      return pieces;
+    }
+
+    // 計算棋子在 viewBox (560 x 620) 中的百分比位置
+    function getBoardPos(col, row) {
+      const c = isFlipped ? (8 - col) : col;
+      const r = isFlipped ? (9 - row) : row;
+      const xPercent = ((40 + c * 60) / 560) * 100;
+      const yPercent = ((40 + r * 60) / 620) * 100;
+      return { x: xPercent, y: yPercent };
+    }
+
+    // 重算並應用棋盤狀態至 step
+    function computePiecesAtStep(step) {
+      const pieces = initialPieces.map(p => ({ ...p }));
+      for (let i = 0; i < step; i++) {
+        const m = movesList[i];
+        if (!m || !m.from || !m.to) break;
+        const p = pieces.find(x => x.alive && x.col === m.from[0] && x.row === m.from[1]);
+        if (!p) continue;
+        const cap = pieces.find(x => x.alive && x.id !== p.id && x.col === m.to[0] && x.row === m.to[1]);
+        if (cap) cap.alive = false;
+        p.col = m.to[0];
+        p.row = m.to[1];
+      }
+      return pieces;
+    }
+
+    // 渲染棋盤棋子與標記
+    function renderBoard() {
+      const piecesLayer = document.getElementById('piecesLayer');
+      const markersLayer = document.getElementById('markersLayer');
+
+      // 渲染最後一手移動提示標記
+      markersLayer.innerHTML = '';
+      if (currentStep > 0 && currentStep <= movesList.length) {
+        const lastMove = movesList[currentStep - 1];
+        if (lastMove && lastMove.from && lastMove.to) {
+          const fromPos = getBoardPos(lastMove.from[0], lastMove.from[1]);
+          const toPos = getBoardPos(lastMove.to[0], lastMove.to[1]);
+
+          const fromEl = document.createElement('div');
+          fromEl.className = 'move-marker from';
+          fromEl.style.left = fromPos.x + '%';
+          fromEl.style.top = fromPos.y + '%';
+
+          const toEl = document.createElement('div');
+          toEl.className = 'move-marker to';
+          toEl.style.left = toPos.x + '%';
+          toEl.style.top = toPos.y + '%';
+
+          markersLayer.appendChild(fromEl);
+          markersLayer.appendChild(toEl);
+        }
+      }
+
+      // 渲染棋子
+      piecesState = computePiecesAtStep(currentStep);
+      piecesLayer.innerHTML = '';
+      piecesState.forEach(p => {
+        if (!p.alive) return;
+        const el = document.createElement('div');
+        el.className = `piece ${p.side === 'r' ? 'red' : 'black'}`;
+        el.textContent = p.type;
+        const pos = getBoardPos(p.col, p.row);
+        el.style.left = pos.x + '%';
+        el.style.top = pos.y + '%';
+        piecesLayer.appendChild(el);
+      });
+
+      // 更新進度條與著法高亮
+      updateProgressAndHighlight();
+    }
+
+    function updateProgressAndHighlight() {
+      // 進度條
+      const progressInner = document.getElementById('progressInner');
+      const pct = totalMoves > 0 ? Math.round((currentStep / totalMoves) * 100) : 0;
+      progressInner.style.width = pct + '%';
+
+      // 移除舊的高亮
+      document.querySelectorAll('.step-btn.active').forEach(el => el.classList.remove('active'));
+
+      // 標亮當前步
+      if (currentStep > 0) {
+        const activeBtn = document.getElementById(`step-btn-${currentStep - 1}`);
+        if (activeBtn) {
+          activeBtn.classList.add('active');
+          activeBtn.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      }
+
+      // 更新狀態文字
+      const statusMsg = document.getElementById('statusMsg');
+      statusMsg.textContent = `第 ${currentStep} / ${totalMoves} 手 ｜ 鍵盤快捷鍵：← 上一手 ｜ → 下一手 ｜ 空白鍵 播放/暫停`;
+    }
+
+    // 切換至指定步數
+    function goToStep(step) {
+      currentStep = Math.max(0, Math.min(totalMoves, step));
+      renderBoard();
+      if (currentStep >= totalMoves && autoTimer) {
+        stopAuto();
+      }
+    }
+
+    // 上一步 / 下一步
+    function stepMove(delta) {
+      goToStep(currentStep + delta);
+    }
+
+    // 自動播放控制
+    function toggleAuto() {
+      if (autoTimer) {
+        stopAuto();
+      } else {
+        startAuto();
+      }
+    }
+
+    function startAuto() {
+      if (currentStep >= totalMoves) {
+        goToStep(0);
+      }
+      const btn = document.getElementById('btnAuto');
+      btn.textContent = '⏸ 暫停';
+      btn.classList.add('active');
+      autoTimer = setInterval(() => {
+        if (currentStep >= totalMoves) {
+          stopAuto();
+          return;
+        }
+        stepMove(1);
+      }, playSpeed);
+    }
+
+    function stopAuto() {
+      if (autoTimer) {
+        clearInterval(autoTimer);
+        autoTimer = null;
+      }
+      const btn = document.getElementById('btnAuto');
+      btn.textContent = '▶ 自動播放';
+      btn.classList.remove('active');
+    }
+
+    function changeSpeed() {
+      playSpeed = Number(document.getElementById('speedSelect').value);
+      if (autoTimer) {
+        stopAuto();
+        startAuto();
+      }
+    }
+
+    function toggleFlip() {
+      isFlipped = !isFlipped;
+      renderBoard();
+    }
+
+    // 鍵盤快速鍵
+    window.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        stepMove(-1);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        stepMove(1);
+      } else if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault();
+        toggleAuto();
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        goToStep(0);
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        goToStep(totalMoves);
+      }
+    });
+
+    // 構建右側棋譜表格
+    function renderMovesTable() {
+      const tbody = document.getElementById('movesTbody');
+      tbody.innerHTML = '';
+
+      const rowsCount = Math.ceil(totalMoves / 2);
+      if (rowsCount === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:20px; color:#888;">此棋譜尚無著法資料</td></tr>';
+        return;
+      }
+
+      for (let r = 0; r < rowsCount; r++) {
+        const roundNum = r + 1;
+        const redIdx = r * 2;
+        const blackIdx = r * 2 + 1;
+
+        const redToken = tokensList[redIdx] || '';
+        const blackToken = tokensList[blackIdx] || '';
+
+        const tr = document.createElement('tr');
+
+        // 回合號
+        const tdRound = document.createElement('td');
+        tdRound.style.textAlign = 'center';
+        tdRound.style.fontWeight = 'bold';
+        tdRound.style.color = '#7a4a23';
+        tdRound.textContent = roundNum;
+        tr.appendChild(tdRound);
+
+        // 紅方著法
+        const tdRed = document.createElement('td');
+        if (redToken) {
+          const btn = document.createElement('span');
+          btn.id = `step-btn-${redIdx}`;
+          btn.className = 'step-btn red-move';
+          btn.textContent = redToken;
+          btn.onclick = () => goToStep(redIdx + 1);
+          tdRed.appendChild(btn);
+        }
+        tr.appendChild(tdRed);
+
+        // 黑方著法
+        const tdBlack = document.createElement('td');
+        if (blackToken) {
+          const btn = document.createElement('span');
+          btn.id = `step-btn-${blackIdx}`;
+          btn.className = 'step-btn black-move';
+          btn.textContent = blackToken;
+          btn.onclick = () => goToStep(blackIdx + 1);
+          tdBlack.appendChild(btn);
+        }
+        tr.appendChild(tdBlack);
+
+        tbody.appendChild(tr);
+      }
+    }
+
+    // 載入棋譜資料
+    async function loadGame() {
+      const id = new URLSearchParams(location.search).get('id');
+      if (!id) {
+        alert('缺少棋譜 ID');
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/games/${encodeURIComponent(id)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        gameData = await res.json();
+
+        // 設置基本資訊
+        document.getElementById('redName').textContent = '🔴 ' + (gameData.red || '未知紅方');
+        document.getElementById('blackName').textContent = (gameData.black || '未知黑方') + ' ⚫';
+        document.getElementById('matchResult').textContent = gameData.result || '未知結果';
+        document.getElementById('matchEvent').textContent = '賽事：' + (gameData.event || '未知賽事');
+        document.getElementById('matchDate').textContent = '時間：' + (gameData.year ? gameData.year + '年 ' : '') + (gameData.date || '');
+        document.getElementById('matchOpening').textContent = '開局：' + (gameData.opening || '未分類');
+
+        if (gameData.detailUrl) {
+          document.getElementById('dpxqLink').href = gameData.detailUrl;
+        }
+
+        // 解析著法與棋子
+        movesList = (gameData.exactMoves && gameData.exactMoves.length) ? gameData.exactMoves : (gameData.moves || []);
+        tokensList = Array.isArray(gameData.tokens) ? gameData.tokens : [];
+        totalMoves = movesList.length || tokensList.length;
+        document.getElementById('matchMovesCount').textContent = `總手數：${totalMoves} 手`;
+
+        initialPieces = parseBinit(gameData.dpxqBinit || gameData.binit);
+
+        renderMovesTable();
+        goToStep(0);
+
+      } catch (err) {
+        document.getElementById('movesTbody').innerHTML = `<tr><td colspan="3" style="color:red; text-align:center; padding:20px;">載入棋譜失敗: ${err.message}</td></tr>`;
+      }
+    }
+
+    loadGame();
+  </script>
+</body>
+</html>
