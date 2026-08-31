@@ -1,10 +1,13 @@
 services:
   - type: web
-    name: xiangqi-web-suite
-    env: node
-    plan: free
-    buildCommand: npm install
-    startCommand: npm start
-    envVars:
-      - key: NODE_VERSION
-        value: "20"
+    name: my-backend-api
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      name: xiangqi-data
+      mountPath: /app/data
+      sizeGB: 1

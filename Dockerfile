@@ -1,7 +1,9 @@
-FROM node:20-bookworm-slim
+FROM mcr.microsoft.com/playwright:v1.55.0-noble
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm install --omit=dev
 COPY . .
-EXPOSE 3000
+ENV NODE_ENV=production
+ENV PORT=10000
+EXPOSE 10000
 CMD ["npm","start"]
