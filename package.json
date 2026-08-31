@@ -1,8 +1,8 @@
 {
   "name":"xiangqi-web-suite",
-  "version":"2.9.1",
+  "version":"2.9.2",
   "private":true,
-  "description":"象棋小棋聖 V2.9：東萍 Playwright 匯入、棋手庫、棋譜庫、原棋盤播放",
+  "description":"象棋小棋聖 V2.9.2：東萍大師棋譜匯入、棋手庫、棋譜庫、原棋盤播放（預設20頁最多100盤）",
   "main":"server.js",
   "scripts": {
     "start": "node server.js",
