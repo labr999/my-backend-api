@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.5';
-const DISPLAY_VERSION = 'V2.9.5';
+const APP_VERSION = '2.9.6';
+const DISPLAY_VERSION = 'V2.9.6';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -126,16 +126,7 @@ function addGame(g) {
   return { game: rec, duplicate: false };
 }
 
-function classifyOpening(t) {
-  const s = (t || []).slice(0, 10).join(' ');
-  if (/炮二平五|砲二平五/.test(s)) return '中炮';
-  if (/馬二進三.*馬8進7|马二进三.*马8进7/.test(s)) return '中炮屏風馬';
-  if (/相三進五|相七進五|象3进5|象7进5/.test(s)) return '飛相局';
-  if (/兵三進一|兵7进1/.test(s)) return '仙人指路';
-  if (/炮二平四|砲二平四/.test(s)) return '仕角炮';
-  if (/馬二進三|马二进三/.test(s)) return '馬蹄局/起馬';
-  return s ? '其他開局' : '未分類';
-}
+
 
 const TYPE = { R: '車', N: '馬', B: '相', A: '仕', K: '帥', C: '砲', P: '兵', r: '車', n: '馬', b: '象', a: '士', k: '將', c: '砲', p: '卒' };
 const DEFAULT_BINIT = '0919293949596979891777062646668600102030405060708012720323436383';
@@ -238,6 +229,35 @@ function legal(b, side) {
   return out;
 }
 
+const redNumServer = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+function colNameServer(side, col) { const n = side === 'r' ? 9 - col : col + 1; return side === 'r' ? redNumServer[n] : String(n); }
+function stepNameServer(side, k) { return side === 'r' ? redNumServer[k] : String(k); }
+
+function genNotationServer(pieces, piece, from, to) {
+  const side = piece.side, k = cat(piece.type);
+  const straight = (k === 'R' || k === 'C' || k === 'P' || k === 'K');
+  const sameColMates = pieces.filter(p => p.alive && p !== piece && p.side === side && cat(p.type) === k && p.col === from[0]);
+  let prefix = '';
+  if (sameColMates.length > 0 && (k === 'R' || k === 'C' || k === 'P' || k === 'N')) {
+    const isFront = side === 'r'
+      ? from[1] < Math.min(...sameColMates.map(o => o.row))
+      : from[1] > Math.max(...sameColMates.map(o => o.row));
+    prefix = isFront ? '前' : '後';
+  }
+  let body;
+  if (straight) {
+    if (to[1] === from[1]) body = '平' + colNameServer(side, to[0]);
+    else {
+      const adv = side === 'r' ? to[1] < from[1] : to[1] > from[1];
+      body = (adv ? '進' : '退') + stepNameServer(side, Math.abs(to[1] - from[1]));
+    }
+  } else {
+    const adv = side === 'r' ? to[1] < from[1] : to[1] > from[1];
+    body = (adv ? '進' : '退') + colNameServer(side, to[0]);
+  }
+  return prefix ? prefix + piece.type + body : piece.type + colNameServer(side, from[0]) + body;
+}
+
 function decodeMoves(binit, movelist) {
   binit = binit || DEFAULT_BINIT;
   const pieces = decodeBinit(binit);
@@ -258,9 +278,10 @@ function decodeMoves(binit, movelist) {
       reason = `DhtmlXQ 著法無法通過基本棋規 (手數 ${i / 4 + 1}：${p.type} ${fc},${fr}->${tc},${tr})`;
       break;
     }
+    const nota = genNotationServer(pieces, p, [fc, fr], [tc, tr]);
     const cap = pieces.find(x => x.alive && x.col === tc && x.row === tr && x !== p);
-    tokens.push(`${p.type}${fc},${fr}-${tc},${tr}`);
-    exact.push({ from: [fc, fr], to: [tc, tr] });
+    tokens.push(nota);
+    exact.push({ from: [fc, fr], to: [tc, tr], notation: nota });
     if (cap) cap.alive = false;
     p.col = tc; p.row = tr;
     side = side === 'r' ? 'b' : 'r';
@@ -272,37 +293,37 @@ function classifyOpening(tokens) {
   if (!Array.isArray(tokens) || !tokens.length) return '自選開局';
   const early15 = tokens.slice(0, 15).map(x => String(x || ''));
   const first = early15[0] || '';
-  const isCenter = first.includes('7,7-4,7') || first.includes('1,7-4,7') || first.includes('炮二平五') || first.includes('炮八平五');
+  const isCenter = first.includes('7,7-4,7') || first.includes('1,7-4,7') || /^[砲炮][二八28]平[五5]/.test(first);
 
   if (isCenter) {
     const blk = early15.filter((_, i) => i % 2 === 1);
     const red = early15.filter((_, i) => i % 2 === 0);
-    if (blk.some(m => m.includes('1,2-4,2') || m.includes('炮8平5'))) return '中炮對順手砲';
-    if (blk.some(m => m.includes('7,2-4,2') || m.includes('炮2平5'))) return '中炮對列手砲';
-    if (blk.some(m => m.includes('7,2-7,6') || m.includes('1,2-1,6') || m.includes('炮8進4') || m.includes('炮2進4'))) return '左砲封車';
-    if (blk.some(m => m.includes('7,2-8,2') || m.includes('1,2-0,2') || m.includes('炮2平1') || m.includes('炮8平9'))) return '中砲對三步虎';
-    if (blk.some(m => m.includes('7,2-5,2') || m.includes('1,2-3,2') || m.includes('炮8平6') || m.includes('炮2平4'))) return '中砲對反宮馬';
-    if (blk.some(m => m.includes('7,0-8,2') || m.includes('1,0-0,2') || m.includes('馬8進9') || m.includes('馬2進1'))) return '中砲對單提馬';
-    if (blk.some(m => m.includes('7,2-7,4') || m.includes('1,2-1,4') || m.includes('炮8進2') || m.includes('炮2進2'))) return '中砲對巡河砲';
-    if (blk.some(m => m.includes('6,0-4,2') || m.includes('2,0-4,2') || m.includes('象3進5') || m.includes('象7進5'))) return '中砲對飛象局';
-    if (blk.some(m => m.includes('7,0-6,2') || m.includes('1,0-2,2') || m.includes('馬8進7') || m.includes('馬2進3'))) return '中砲對屏風馬';
-    if (red.some(m => m.includes('1,7-2,7') || m.includes('7,7-6,7') || m.includes('炮八平七') || m.includes('炮二平三'))) return '中砲五七炮進三兵';
-    return '中炮局';
+    if (blk.some(m => m.includes('1,2-4,2') || /^[砲炮][88八]平[5五]/.test(m))) return '中砲對順手砲';
+    if (blk.some(m => m.includes('7,2-4,2') || /^[砲炮][22二]平[5五]/.test(m))) return '中炮對列手砲';
+    if (blk.some(m => m.includes('7,2-7,6') || m.includes('1,2-1,6') || /^[砲炮][28二八]進[4四]/.test(m))) return '左砲封車';
+    if (blk.some(m => m.includes('7,2-8,2') || m.includes('1,2-0,2') || /^[砲炮][28二八]平[19一九]/.test(m))) return '中砲對三步虎';
+    if (blk.some(m => m.includes('7,2-5,2') || m.includes('1,2-3,2') || /^[砲炮][28二八]平[46四六]/.test(m))) return '中砲對反宮馬';
+    if (blk.some(m => m.includes('7,0-8,2') || m.includes('1,0-0,2') || /^馬[28二八]進[19一九]/.test(m))) return '中砲對單提馬';
+    if (blk.some(m => m.includes('7,2-7,4') || m.includes('1,2-1,4') || /^[砲炮][28二八]進[2二]/.test(m))) return '中砲對巡河砲';
+    if (blk.some(m => m.includes('6,0-4,2') || m.includes('2,0-4,2') || /^[相象][37三七]進[5五]/.test(m))) return '中砲對飛象局';
+    if (blk.some(m => m.includes('7,0-6,2') || m.includes('1,0-2,2') || /^馬[28二八]進[37三七]/.test(m))) return '中砲對屏風馬';
+    if (red.some(m => m.includes('1,7-2,7') || m.includes('7,7-6,7') || /^[砲炮][二八28]平[三七37]/.test(m))) return '中砲五七炮進三兵';
+    return '中砲對屏風馬';
   }
 
-  if (first.includes('6,6-6,5') || first.includes('2,6-2,5') || first.includes('兵七進一') || first.includes('兵三進一')) {
+  if (first.includes('6,6-6,5') || first.includes('2,6-2,5') || /^兵[三七37]進[1一]/.test(first)) {
     const second = early15[1] || '';
-    if (second.includes('7,2-6,2') || second.includes('1,2-2,2') || second.includes('炮2平3') || second.includes('炮8平7')) return '先手仙人指路對卒底炮';
+    if (second.includes('7,2-6,2') || second.includes('1,2-2,2') || /^[砲炮][28二八]平[37三七]/.test(second)) return '先手仙人指路對卒底炮';
     return '仙人指路（先手起手式）';
   }
-  if (first.includes('6,9-4,7') || first.includes('2,9-4,7') || first.includes('相七進五') || first.includes('相三進五')) {
+  if (first.includes('6,9-4,7') || first.includes('2,9-4,7') || /^[相象][三七37]進[5五]/.test(first)) {
     const second = early15[1] || '';
-    if (second.includes('1,2-4,2') || second.includes('7,2-4,2') || second.includes('炮8平5') || second.includes('炮2平5')) return '中砲對飛象局';
+    if (second.includes('1,2-4,2') || second.includes('7,2-4,2') || /^[砲炮][28二八]平[5五]/.test(second)) return '中砲對飛象局';
     return '飛相局';
   }
-  if (first.includes('7,9-6,7') || first.includes('1,9-2,7') || first.includes('馬二進三') || first.includes('馬八進七')) return '起馬局';
-  if (first.includes('7,7-5,7') || first.includes('1,7-3,7') || first.includes('炮二平四') || first.includes('炮八平六')) return '先手反宮馬（士角砲開局）';
-  if (first.includes('7,7-3,7') || first.includes('1,7-5,7') || first.includes('炮二平六') || first.includes('炮八平四')) return '過宮砲';
+  if (first.includes('7,9-6,7') || first.includes('1,9-2,7') || /^馬[二八28]進[三七37]/.test(first)) return '起馬局';
+  if (first.includes('7,7-5,7') || first.includes('1,7-3,7') || /^[砲炮][二八28]平[四六46]/.test(first)) return '先手反宮馬（士角砲開局）';
+  if (first.includes('7,7-3,7') || first.includes('1,7-5,7') || /^[砲炮][二八28]平[六四64]/.test(first)) return '過宮砲';
   return '自選開局';
 }
 
