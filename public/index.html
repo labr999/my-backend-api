@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#8B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="象棋開局">
-<title>象棋小棋聖 V2.9.3 ｜ 象棋開局譜</title>
+<title>象棋小棋聖 V2.9.4 ｜ 象棋開局譜</title>
 <style>
 
 :root{
@@ -292,7 +292,13 @@ select.field{appearance:auto}
       <div id="obResults" style="margin-top:10px"></div>
     </div>
     <div class="card">
-      <div class="collapse-head" id="treeToggle"><h3 style="margin:0">🌳 開局樹狀圖</h3><span class="chev rot" id="treeChev">▼</span></div>
+      <div class="collapse-head" id="treeToggle" style="display:flex;align-items:center;justify-content:space-between">
+        <h3 style="margin:0;display:flex;align-items:center;gap:6px">🌳 開局分類樹狀圖</h3>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button type="button" class="ghost" id="btnAddOpenCat" style="padding:4px 10px;border:none;border-radius:8px;background:var(--surface-variant);color:var(--primary);font-size:.76rem;font-weight:700;cursor:pointer">➕ 增加目錄</button>
+          <span class="chev rot" id="treeChev">▼</span>
+        </div>
+      </div>
       <div class="collapse-body open" id="treeBody">
         <div id="openingTree" style="padding-top:10px"></div>
       </div>
@@ -353,7 +359,10 @@ select.field{appearance:auto}
       </div>
       <input class="field" type="text" id="impName" placeholder="棋譜名稱（可留空自動命名）">
       <textarea class="field" id="impText" rows="4" placeholder="貼上棋譜（自動辨識格式）：中文記譜／東萍 DhtmlXQ／WXF／ICCS／PGN／FEN／JSON 皆可。"></textarea>
-      <select class="field" id="impCategory"><option value="auto">🤖 自動分類</option></select>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+        <select class="field" id="impCategory" style="flex:1;margin-bottom:0"><option value="auto">🤖 自動分類（無分類則依勝方歸入）</option></select>
+        <button type="button" class="ghost" id="btnAddCustomCat" style="padding:10px 14px;border:none;border-radius:10px;background:var(--surface-variant);color:var(--primary);font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap">➕ 增加目錄</button>
+      </div>
       <div class="btn-row">
         <button class="primary" id="btnDoImport">匯入並分類</button>
       </div>
@@ -1388,27 +1397,72 @@ function isDhtmlXQ(text){ return /\[DhtmlXQ_movelist\]/.test(text); }function pa
 
 function tokenizeRecord(text){
   return text.match(MOVE_TOKEN_RE) || [];
-}
-
-function autoClassify(tokens){
-  const notas = tokens.map(normalizeNotation);
+function autoClassify(tokens, result, preferSide){
+  const notas = (tokens||[]).map(normalizeNotation);
   const exact = matchKnownLines(notas);
   const hits = classifyOpening(notas).filter(h=>!h.cat.includes('總清單'));
-  // 深度吻合（5步以上）優先採用精確比對；否則以開局特徵判斷為準
+  // 1. 深度吻合（5步以上）優先採用精確比對
   if(exact.length>0 && exact[0].score>=5) return {side:exact[0].side, cat:exact[0].cat, why:exact[0].why};
+  // 2. 開局特徵判斷
   if(hits.length>0) return {side:hits[0].side, cat:hits[0].cat, why:hits[0].why};
+  // 3. 淺層吻合
   if(exact.length>0) return {side:exact[0].side, cat:exact[0].cat, why:exact[0].why};
-  return null;
+  
+  // 4. 若無符合開局特徵：以勝方歸入先後手開局分類！
+  const resStr = String(result||'').trim();
+  if(/紅勝|红胜|紅先勝|红先胜|1-0|red/i.test(resStr)){
+    return {side:'先手', cat:'執紅勝局（自選開局）', why:'依勝方（紅勝）歸入先手'};
+  }
+  if(/黑勝|黑胜|0-1|black/i.test(resStr)){
+    return {side:'後手', cat:'執黑勝局（自選開局）', why:'依勝方（黑勝）歸入後手'};
+  }
+  if(/和|draw|1\/2/i.test(resStr)){
+    const ps = preferSide==='後手'?'後手':'先手';
+    return {side:ps, cat:(ps==='後手'?'後手':'先手')+'和局精選', why:'依和局歸入'+ps};
+  }
+
+  // 5. 無結果資訊時以預設/當前視角歸入
+  const defSide = (preferSide==='後手')?'後手':'先手';
+  return {side:defSide, cat:(defSide==='後手'?'後手自選開局':'先手自選開局'), why:'未能判斷，依視角歸入'+defSide};
 }
 
 function ensureCategory(side, cat, intro){
-  if(!DATA[side][cat]) DATA[side][cat] = {intro: intro||'由匯入棋譜功能建立的分類。', lines:[]};
+  if(!side) side = '先手';
+  if(!cat) cat = (side==='後手'?'後手自選開局':'先手自選開局');
+  if(!DATA[side]) DATA[side] = {};
+  if(!DATA[side][cat]) {
+    DATA[side][cat] = {
+      intro: intro || (side + '開局分類目錄：' + cat + '。'),
+      lines: []
+    };
+    refreshImportCategoryOptions();
+  }
   return DATA[side][cat];
+}
+
+function promptAddCategory(defaultSide = '先手') {
+  const catName = prompt('請輸入新開局分類目錄名稱（例如：五八炮對屏風馬、中炮急進中兵、飛相轉仕角炮等）：');
+  if (!catName || !catName.trim()) return null;
+  const name = catName.trim();
+  const sideChoice = prompt('請選擇所屬陣營（輸入 1 為「先手/執紅」，輸入 2 為「後手/執黑」）：', defaultSide === '後手' ? '2' : '1');
+  if (sideChoice === null) return null;
+  const side = (sideChoice.trim() === '2' || sideChoice.includes('後') || sideChoice.includes('黑')) ? '後手' : '先手';
+  
+  ensureCategory(side, name, `自訂開局分類目錄：${name}`);
+  refreshImportCategoryOptions();
+  buildCatGrid();
+  buildOpeningTree();
+  
+  const sel = document.getElementById('impCategory');
+  if (sel) sel.value = side + '|' + name;
+  toast(`✔ 已增加開局目錄：${side}｜${name}`);
+  return { side, name };
 }
 
 function refreshImportCategoryOptions(){
   const sel = document.getElementById('impCategory');
-  sel.innerHTML = '<option value="auto">🤖 自動分類</option>';
+  if(!sel) return;
+  sel.innerHTML = '<option value="auto">🤖 自動分類（無分類則依勝方歸入）</option>';
   Object.keys(DATA).forEach(side=>{
     Object.keys(DATA[side]).forEach(cat=>{
       const opt=document.createElement('option');
@@ -1417,6 +1471,74 @@ function refreshImportCategoryOptions(){
       sel.appendChild(opt);
     });
   });
+}
+
+function syncMasterGamesToOpeningTree(gamesList){
+  if (!Array.isArray(gamesList) || !gamesList.length) return;
+  let addedCount = 0;
+  for (const g of gamesList) {
+    const exact = Array.isArray(g.exactMoves) ? g.exactMoves : [];
+    const toks = Array.isArray(g.tokens) && g.tokens.length ? g.tokens : (Array.isArray(g.moves) ? g.moves : []);
+    if (!toks || toks.length < 2) continue;
+
+    // 判斷開局名稱與先後手陣營
+    let side = null, cat = null, why = '';
+    
+    // 1. 如果已有明確開局名稱，先查 DATA 先後手
+    if (g.opening && g.opening !== '未分類' && g.opening !== '其他開局') {
+      if (DATA['先手'] && DATA['先手'][g.opening]) { side = '先手'; cat = g.opening; }
+      else if (DATA['後手'] && DATA['後手'][g.opening]) { side = '後手'; cat = g.opening; }
+    }
+    
+    // 2. 若尚未歸類，以著法自動分類（含勝方歸入）
+    if (!side || !cat) {
+      const cls = autoClassify(toks, g.result || '', '先手');
+      if (cls) { side = cls.side; cat = cls.cat; why = cls.why; }
+    }
+    
+    // 3. 若仍無法分類：以勝方歸入先後手開局分類！
+    if (!side || !cat) {
+      const res = String(g.result || '').trim();
+      if (/紅勝|红胜|紅先勝|红先胜|1-0|red/i.test(res)) {
+        side = '先手'; cat = g.opening || '執紅勝局（大師對局）';
+      } else if (/黑勝|黑胜|0-1|black/i.test(res)) {
+        side = '後手'; cat = g.opening || '執黑勝局（大師對局）';
+      } else {
+        side = '先手'; cat = g.opening || '大師對局精選';
+      }
+    }
+
+    // 4. 若分類目錄不存在，自動增加目錄
+    ensureCategory(side, cat, `大師對局開局目錄：${cat}`);
+
+    // 5. 檢查此局是否已在該分類下
+    const entry = DATA[side][cat];
+    const gameTitle = `👑 ${g.red || '紅方'} ${g.result || ''} ${g.black || '黑方'}${g.year ? ' (' + g.year + ')' : ''}`;
+    const exists = entry.lines.some(l => (l.gameId && l.gameId === g.id) || l.name === gameTitle);
+    if (!exists) {
+      let moves = null;
+      if (exact.length === toks.length && exact.length) {
+        moves = exact.map((m, i) => ({ from: m.from, to: m.to, notation: toks[i] || ('第' + (i + 1) + '步') }));
+      } else {
+        try { moves = buildMovesFromNotation(toks); } catch (e) {}
+      }
+      const desc = `${g.year ? g.year + '年 ' : ''}${g.event || ''}｜${g.red || '紅'} 先行 對 ${g.black || '黑'}【${g.result || '未知'}】｜開局：${cat}${g.detailUrl ? `｜<a href="${g.detailUrl}" target="_blank">東萍來源</a>` : ''}`;
+      entry.lines.push({
+        name: gameTitle,
+        desc,
+        moves: moves || [],
+        master: true,
+        gameId: g.id
+      });
+      addedCount++;
+    }
+  }
+
+  if (addedCount > 0) {
+    refreshImportCategoryOptions();
+    buildCatGrid();
+    buildOpeningTree();
+  }
 }
 
 let importedGames = [];
@@ -1541,8 +1663,7 @@ function addImportedGame(side, cat, name, tokens, save, meta, exactMoves){
   return {ok:true};
 }
 
-
-function classifyForSave(tokens, preferSide){
+function classifyForSave(tokens, preferSide, result){
   const notas = tokens.map(normalizeNotation);
   const exact = matchKnownLines(notas);
   const heur = classifyOpening(notas).filter(h=>!h.cat.includes('總清單'));
@@ -1551,7 +1672,10 @@ function classifyForSave(tokens, preferSide){
   const pool = [...deep, ...heur, ...exact];
   const seen = new Set();
   const uniq = pool.filter(r=>{ const k=r.side+'|'+r.cat; if(seen.has(k))return false; seen.add(k); return true; });
-  return uniq.find(r=>r.side===preferSide) || uniq[0] || null;
+  if(uniq.length > 0) return uniq.find(r=>r.side===preferSide) || uniq[0];
+  
+  // 若無法辨識，以勝方或視角歸入
+  return autoClassify(tokens, result, preferSide);
 }
 
 
@@ -2629,6 +2753,8 @@ async function loadMasterGames() {
     const r = await fetch('/api/games?q=' + encodeURIComponent(q));
     const j = await r.json();
     const items = j.items || [];
+    // 自動將大師對局分類並加入開局分類樹狀圖！
+    syncMasterGamesToOpeningTree(items);
     const badge = document.getElementById('gameTotalBadge');
     if (badge) badge.textContent = '共 ' + items.length + ' 盤';
     if (!items.length) {
@@ -2654,6 +2780,8 @@ async function loadMasterGames() {
 }
 document.getElementById('btnSearchGames')?.addEventListener('click', loadMasterGames);
 document.getElementById('masterGq')?.addEventListener('keydown', e=>{ if(e.key==='Enter') loadMasterGames(); });
+document.getElementById('btnAddCustomCat')?.addEventListener('click', () => promptAddCategory(curSide));
+document.getElementById('btnAddOpenCat')?.addEventListener('click', (e) => { e.stopPropagation(); promptAddCategory(curSide); });
 
 async function playMasterGame(id) {
   try {
