@@ -525,17 +525,32 @@ app.get('/api/dpxq/source', (q, s) => s.json({ name: '東萍象棋網', url: DPX
 app.get('/api/dpxq/masters', (q, s) => s.json({ items: MASTER_PLAYERS, baseUrl: DPXQ_BASE, maxPages: MAX_PLAYER_PAGES, maxGames: MAX_PLAYER_GAMES }));
 app.get('/api/dpxq/progress', (q, s) => s.json(syncJob || { running: false }));
 
-app.post('/api/dpxq/test', async (q, s) => {
+async function handleDpxqTest(q, s) {
+  const t0 = Date.now();
   try {
-    const url = normalizeDpxqUrl(q.body?.url || DPXQ_BASE);
+    const rawUrl = q.body?.url || q.query?.url || DPXQ_BASE;
+    const url = normalizeDpxqUrl(rawUrl);
     const html = await fetchDpxqHtml(url);
+    const ms = Date.now() - t0;
     const titleMatch = html.match(/<title>([\s\S]*?)<\/title>/i);
     const title = titleMatch ? htmlDecode(titleMatch[1].trim()) : '東萍象棋網';
-    s.json({ ok: true, title, url });
+    const indexGames = (html.match(/view\(['"]?owner=/gi) || []).length;
+    const dhtmlxqBlocks = (html.match(/\[DhtmlXQ_movelist\]/gi) || []).length;
+    s.json({
+      ok: true,
+      title,
+      url,
+      ms,
+      indexGames,
+      dhtmlxqBlocks,
+      message: `連線成功 (${ms}ms)，取得頁面標題：${title}`
+    });
   } catch (e) {
     s.status(502).json({ ok: false, error: e.message });
   }
-});
+}
+app.get('/api/dpxq/test', handleDpxqTest);
+app.post('/api/dpxq/test', handleDpxqTest);
 
 async function discoverPlayerPages(player, maxPages = MAX_PLAYER_PAGES, maxGames = MAX_PLAYER_GAMES) {
   const simpPlayer = toSimp(player);
@@ -622,6 +637,122 @@ async function syncPlayer(player) {
   save();
   return { player, pagesChecked: MAX_PLAYER_PAGES, discovered: urls.length, processed, added, duplicates, errors, results };
 }
+
+app.post('/api/dpxq/sync/start', async (q, s) => {
+  if (syncJob?.running) return s.status(409).json({ error: '已有同步工作執行中' });
+  const player = String(q.body?.player || '').trim();
+  const maxPages = Math.min(100, Math.max(1, Number(q.body?.maxPages || MAX_PLAYER_PAGES)));
+  const url = normalizeDpxqUrl(q.body?.url || DPXQ_BASE);
+
+  syncJob = {
+    status: 'running',
+    running: true,
+    progress: 10,
+    mode: player ? 'player' : 'url',
+    player,
+    url,
+    maxPages,
+    pagesDone: 0,
+    found: 0,
+    detailDone: 0,
+    detailTotal: 0,
+    processed: 0,
+    added: 0,
+    updated: 0,
+    duplicates: 0,
+    playable: 0,
+    errors: 0,
+    message: player ? `準備同步「${player}」棋譜（最多 ${maxPages} 頁）…` : '準備自動分頁同步…'
+  };
+  emitProgress({});
+  s.json({ ok: true, stats: syncJob });
+
+  (async () => {
+    try {
+      if (player) {
+        const r = await syncPlayer(player);
+        Object.assign(syncJob, {
+          status: 'done',
+          running: false,
+          progress: 100,
+          added: r.added,
+          updated: r.duplicates,
+          duplicates: r.duplicates,
+          playable: r.added,
+          errors: r.errors,
+          processed: r.processed,
+          found: r.discovered,
+          detailDone: r.processed,
+          detailTotal: r.discovered,
+          message: `${player} 同步完成：新增 ${r.added}、重複/更新 ${r.duplicates}、失敗 ${r.errors}`
+        });
+      } else {
+        const r = await importOne(url);
+        const rr = r.results || [];
+        const added = rr.filter(x => !x.duplicate).length;
+        const dups = rr.filter(x => x.duplicate).length;
+        Object.assign(syncJob, {
+          status: 'done',
+          running: false,
+          progress: 100,
+          added,
+          updated: dups,
+          duplicates: dups,
+          playable: added,
+          errors: 0,
+          processed: rr.length,
+          found: rr.length,
+          detailDone: rr.length,
+          detailTotal: rr.length,
+          message: `同步完成：新增 ${added}、重複/更新 ${dups}`
+        });
+      }
+      emitProgress({});
+    } catch (e) {
+      Object.assign(syncJob, {
+        status: 'error',
+        running: false,
+        error: e.message,
+        message: e.message
+      });
+      emitProgress({});
+    }
+  })();
+});
+
+app.get('/api/dpxq/sync/status', (q, s) => {
+  if (!syncJob) return s.json({ status: 'idle', progress: 0, message: '尚未開始同步' });
+  const pct = syncJob.running
+    ? (syncJob.detailTotal ? Math.min(95, Math.round((syncJob.detailDone / syncJob.detailTotal) * 100)) : (syncJob.progress || 10))
+    : (syncJob.status === 'done' ? 100 : 0);
+  s.json({
+    status: syncJob.status || (syncJob.running ? 'running' : 'idle'),
+    progress: pct,
+    pagesDone: syncJob.pagesDone || 0,
+    maxPages: syncJob.maxPages || MAX_PLAYER_PAGES,
+    found: syncJob.found || syncJob.processed || 0,
+    detailDone: syncJob.detailDone || syncJob.processed || 0,
+    detailTotal: syncJob.detailTotal || syncJob.processed || 0,
+    added: syncJob.added || 0,
+    updated: syncJob.updated || syncJob.duplicates || 0,
+    playable: syncJob.playable || syncJob.added || 0,
+    errors: syncJob.errors || 0,
+    player: syncJob.player || '',
+    currentUrl: syncJob.url || '',
+    message: syncJob.message || '',
+    error: syncJob.error || ''
+  });
+});
+
+app.post('/api/dpxq/sync/cancel', (q, s) => {
+  if (syncJob) {
+    syncJob.running = false;
+    syncJob.status = 'cancelled';
+    syncJob.message = '使用者已手動停止同步';
+    emitProgress({});
+  }
+  s.json({ ok: true });
+});
 
 app.post('/api/dpxq/sync-player', async (q, s) => {
   if (syncJob?.running) return s.status(409).json({ error: '已有同步工作執行中' });
