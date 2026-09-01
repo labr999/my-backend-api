@@ -266,6 +266,8 @@ function decodeMoves(binit, movelist) {
     side = side === 'r' ? 'b' : 'r';
   }
   return { exactMoves: exact, tokens, valid, reason, plies: exact.length };
+}
+
 function classifyOpening(tokens) {
   if (!Array.isArray(tokens) || !tokens.length) return '自選開局';
   const first = String(tokens[0] || '');
