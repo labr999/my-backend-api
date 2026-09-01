@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.3';
-const DISPLAY_VERSION = 'V2.9.3';
+const APP_VERSION = '2.9.4';
+const DISPLAY_VERSION = 'V2.9.4';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -266,6 +266,23 @@ function decodeMoves(binit, movelist) {
     side = side === 'r' ? 'b' : 'r';
   }
   return { exactMoves: exact, tokens, valid, reason, plies: exact.length };
+function classifyOpening(tokens) {
+  if (!Array.isArray(tokens) || !tokens.length) return '自選開局';
+  const first = String(tokens[0] || '');
+  if (first.includes('7,7-4,7') || first.includes('1,7-4,7') || first.includes('炮二平五') || first.includes('炮八平五')) {
+    const second = String(tokens[1] || '');
+    if (second.includes('1,2-4,2') || second.includes('炮8平5')) return '中炮對順手砲';
+    if (second.includes('7,2-4,2') || second.includes('炮2平5')) return '中炮對列手砲';
+    if (second.includes('1,0-2,2') || second.includes('7,0-6,2') || second.includes('馬8進7') || second.includes('馬2進3')) return '中炮對屏風馬';
+    if (second.includes('炮8平6') || second.includes('炮2平4')) return '中炮對反宮馬';
+    return '中炮局';
+  }
+  if (first.includes('6,6-6,5') || first.includes('2,6-2,5') || first.includes('兵七進一') || first.includes('兵三進一')) return '仙人指路';
+  if (first.includes('6,9-4,7') || first.includes('2,9-4,7') || first.includes('相七進五') || first.includes('相三進五')) return '飛相局';
+  if (first.includes('7,9-6,7') || first.includes('1,9-2,7') || first.includes('馬二進三') || first.includes('馬八進七')) return '起馬局';
+  if (first.includes('7,7-5,7') || first.includes('1,7-3,7') || first.includes('炮二平四') || first.includes('炮八平六')) return '仕角砲';
+  if (first.includes('7,7-3,7') || first.includes('1,7-5,7') || first.includes('炮二平六') || first.includes('炮八平四')) return '過宮砲';
+  return '自選開局';
 }
 
 function htmlDecode(s) {
