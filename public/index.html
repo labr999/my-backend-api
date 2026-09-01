@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#8B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="象棋開局">
-<title>象棋小棋聖 V2.9.4 ｜ 象棋開局譜</title>
+<title>象棋小棋聖 V2.9.5 ｜ 象棋開局譜</title>
 <style>
 
 :root{
@@ -1123,76 +1123,148 @@ function normalizeNotation(s){
 
 function classifyOpening(notas){
   const hits=[]; // {side, cat, why}
-  if(notas.length===0) return hits;
-  const m1=notas[0]||'', m2=notas[1]||'', m3=notas[2]||'', m4=notas[3]||'';
-  const isCenterCannon = /^砲[二八]平五/.test(m1);
-  const add=(side,cat,why)=>{ if(DATA[side][cat] && !hits.some(h=>h.cat===cat)) hits.push({side,cat,why}); };
+  if(!notas || notas.length===0) return hits;
+  
+  // 取前 15 步進行開局深度比對
+  const early15 = notas.slice(0, 15);
+  const m1 = early15[0] || '', m2 = early15[1] || '', m3 = early15[2] || '', m4 = early15[3] || '';
+  const red = early15.filter((_,i)=>i%2===0);   // 紅方前段著法
+  const blk = early15.filter((_,i)=>i%2===1);   // 黑方前段著法
 
+  const add = (side, cat, why) => {
+    if(DATA[side] && DATA[side][cat] && !hits.some(h=>h.cat===cat)) {
+      hits.push({side, cat, why});
+    }
+  };
+
+  const isCenterCannon = /^砲[二八]平五/.test(m1) || red.some(n=>/^砲[二八]平五/.test(n));
+
+  // 1. 中炮開局體系 (炮二平五 / 炮八平五)
   if(isCenterCannon){
-    const blk = notas.filter((_,i)=>i%2===1);           // 黑方著法
-    const blkEarly = blk.slice(0,5);                     // 黑方前5著
-    // 左砲封車：黑方砲8進4封鎖紅方二路車
-    if(blkEarly.some(n=>/^砲8進4/.test(n))){
-      add('後手','後手左砲封車','黑方砲8進4封鎖紅車（左砲封車）');
+    // 順手砲 (黑第1著同向中砲)
+    if(/^砲8平5/.test(blk[0]||'') || (/^砲[二八]平五/.test(m1) && /^砲8平5/.test(m2))){
+      add('先手','中砲對順手砲','紅方中砲，黑方第1著砲8平5（順手砲）');
+    }
+    // 列手砲 (黑第1著異向中砲)
+    if(/^砲2平5/.test(blk[0]||'') || (/^砲[二八]平五/.test(m1) && /^砲2平5/.test(m2))){
+      add('先手','中炮對列手砲','紅方中砲，黑方第1著砲2平5（列手砲）');
+    }
+    // 半途列砲 (黑方先走馬或車，前15步中平中砲)
+    if(blk.slice(1).some(n=>/^砲[28]平5/.test(n))){
+      add('先手','中砲對半途列砲','黑方布陣中途轉列砲對攻（半途列砲）');
+    }
+    // 左砲封車 (黑砲8進4 / 砲2進4)
+    if(blk.some(n=>/^砲[28]進4/.test(n))){
+      add('後手','後手左砲封車','黑方砲進四封鎖紅車（左砲封車）');
       add('先手','左砲封車','黑方左砲封車（紅方視角應法）');
     }
-    // 三步虎：黑方平邊砲（砲2平1／砲8平9）亮車 —— 掃描黑方前5著
-    if(blkEarly.some(n=>/^砲[28]平[19]/.test(n))){
-      add('先手','中砲對三步虎','黑方平邊砲亮車（三步虎）');
+    // 三步虎 (黑方平邊砲 砲2平1 / 砲8平9 出橫車)
+    if(blk.some(n=>/^砲[28]平[19]/.test(n))){
+      add('先手','中砲對三步虎','黑方平邊砲起橫車（三步虎）');
       add('後手','後手中炮對三步虎','黑方三步虎（後手視角）');
     }
-    if(/^砲8平5/.test(blk[0]||'')) add('先手','中砲對順手砲','黑第1著 砲8平5（順手砲）');
-    if(/^砲2平5/.test(blk[0]||'')) add('先手','中炮對列手砲','黑第1著 砲2平5（列手砲）');
-    if(blkEarly.some(n=>/^砲[28]平[46]/.test(n))){
-      add('先手','中砲對反宮馬','黑方士角砲（反宮馬）');
+    // 反宮馬 (黑方士角砲 砲8平6 / 砲2平4 夾馬)
+    if(blk.some(n=>/^砲[28]平[46]/.test(n))){
+      add('先手','中砲對反宮馬','黑方士角砲夾馬（反宮馬）');
       add('後手','後手反宮馬','黑方反宮馬（後手視角）');
     }
-    if(blkEarly.slice(0,3).some(n=>/^象[37]進5/.test(n))) add('先手','中砲對飛象局','黑方飛象固防');
-    if(blkEarly.slice(0,2).some(n=>/^馬[28]進[19]/.test(n))) add('先手','中砲對單提馬','黑方邊馬（單提馬）');
-    if(/^卒[37]進1/.test(blk[0]||'')) add('先手','中砲對仙人指路','黑第1著 挺卒');
-    if(blkEarly.some(n=>/^砲[28]進2/.test(n))){
-      add('先手','中砲對巡河砲','黑砲進二（巡河砲）');
+    // 單提馬 (黑方邊馬 馬2進1 / 馬8進9)
+    if(blk.some(n=>/^馬[28]進[19]/.test(n)) && !blk.some(n=>/^馬[28]進[37]/.test(n) && blk.filter(x=>/^馬/.test(x)).length>=2)){
+      add('先手','中砲對單提馬','黑方一正馬一邊馬（單提馬）');
+    }
+    // 巡河砲 (黑方砲8進2 / 砲2進2)
+    if(blk.some(n=>/^砲[28]進2/.test(n))){
+      add('先手','中砲對巡河砲','黑砲進二巡河牽制（巡河砲）');
       add('後手','後手巡河砲','黑方巡河砲（後手視角）');
     }
-    const hasM87 = blkEarly.some(n=>/^馬8進7/.test(n));
-    const hasM23 = blkEarly.some(n=>/^馬2進3/.test(n));
-    if(hasM87 && hasM23){
-      add('先手','中砲對屏風馬','黑方雙正馬（屏風馬）');
-      add('後手','後手中砲對屏風馬','黑方屏風馬（後手視角）');
+    // 飛象局 (黑方象3進5 / 象7進5)
+    if(blk.slice(0,3).some(n=>/^象[37]進5/.test(n)) && !blk.some(n=>/^馬[28]進[37]/.test(n) && blk.filter(x=>/^馬/.test(x)).length>=2)){
+      add('先手','中砲對飛象局','黑方先飛象固防中路');
+      add('後手','後手中炮對飛象局','黑方飛象固防（後手視角）');
     }
-    else if((hasM87||hasM23) && hits.length===0)
-      add('先手','中砲對屏風馬','黑方正馬（可能走向屏風馬）');
+    // 屏風馬 (黑方前15步雙正馬 馬8進7 + 馬2進3)
+    const hasM87 = blk.some(n=>/^馬8進7/.test(n));
+    const hasM23 = blk.some(n=>/^馬2進3/.test(n));
+    if(hasM87 && hasM23){
+      add('先手','中砲對屏風馬','黑方雙正馬布陣（屏風馬）');
+      add('後手','後手中砲對屏風馬','黑方屏風馬（後手視角）');
+    } else if((hasM87 || hasM23) && hits.length === 0){
+      add('先手','中砲對屏風馬','黑方正馬（屏風馬系列）');
+    }
+    // 巡河車 (紅車二進四 / 車八進四)
+    if(red.some(n=>/^車[一二八九]進4/.test(n))){
+      add('後手','後手中炮對巡河車','紅方巡河車壓制');
+    }
+    // 直橫車 (紅有一隻直車一隻橫車)
+    if(red.some(n=>/^車[一九]進1/.test(n)) && red.some(n=>/^車[一二八九]平/.test(n))){
+      add('後手','後手對中砲直橫車','紅方中砲直橫車進攻');
+    }
+    // 五六砲 (紅方中炮加仕角炮 炮八平六 / 炮二平四)
+    if(red.some(n=>/^砲[二八]平[四六]/.test(n))){
+      add('後手','後手對五六砲','紅方五六砲陣型');
+    }
+    // 五七炮進三兵 (紅方中炮加七路炮 炮八平七 / 炮二平三 + 兵三進一 / 兵七進一)
+    if(red.some(n=>/^砲[二八]平[三七]/.test(n)) && red.some(n=>/^兵[三七]進1/.test(n))){
+      add('先手','中砲五七炮進三兵','紅方五七炮進三兵體系攻堅');
+    }
+    // 盤頭馬 (紅方雙馬並進連環衝中兵 馬三進五 / 馬七進五)
+    if(red.some(n=>/^馬[三七]進五/.test(n))){
+      add('後手','後手中砲破盤頭馬','紅方盤頭馬中路強攻');
+    }
+    // 敢死砲 (紅方前15步沉底炮急攻 炮八進七 / 炮二進七)
+    if(red.some(n=>/^砲[二八]進7/.test(n))){
+      add('後手','後手中炮對敢死砲','紅方敢死砲強攻');
+    }
   }
-  else if(/^砲[二八]平[四六]/.test(m1)){
-    // 紅方第一手士角砲(炮二平四/炮八平六)或過宮砲(炮二平六/炮八平四)
-    const overPalace = /^砲二平六/.test(m1)||/^砲八平四/.test(m1);
-    if(overPalace) add('後手','後手中砲對過宮砲','紅方過宮砲（若您執黑）');
-    else add('後手','後手對士角砲','紅方士角砲（若您執黑）');
-  }
+  // 2. 仙人指路開局 (紅方第1手挺兵 兵七進一 / 兵三進一)
   else if(/^兵[三七]進1?一?/.test(m1)){
-    add('先手','仙人指路（先手起手式）','第1步 挺兵（仙人指路）');
-    if(/^砲[28]平[37]/.test(m2)) add('先手','先手仙人指路對卒底炮','第2步 卒底砲應仙人指路');
-    add('後手','後手中炮對仙人指路','若您執黑：對方仙人指路');
+    if(blk.some(n=>/^砲[28]平[37]/.test(n))){
+      add('先手','先手仙人指路對卒底炮','第1步挺兵，黑方卒底砲應對');
+    } else if(blk.some(n=>/^砲[28]平5/.test(n))){
+      add('後手','後手中炮對仙人指路','紅方挺兵，黑方還架中砲');
+    } else {
+      add('先手','仙人指路（先手起手式）','紅方挺兵開局（仙人指路）');
+      add('後手','後手中炮對仙人指路','對方仙人指路開局');
+    }
   }
+  // 3. 飛相局開局 (紅方第1手相七進五 / 相三進五)
   else if(/^相[三七]進五/.test(m1)){
-    add('後手','後手中炮對飛象局','第1步 飛相（若您執黑）');
+    if(blk.some(n=>/^砲[28]平5/.test(n))){
+      add('後手','後手中炮對飛象局','紅方飛象，黑方還架中砲');
+      add('先手','中砲對飛象局','飛相局對中砲');
+    } else {
+      add('後手','後手中炮對飛象局','紅方飛相局開局');
+    }
   }
+  // 4. 起馬局開局 (紅方第1手馬二進三 / 馬八進七)
   else if(/^馬[二八]進[三七]/.test(m1)){
-    add('後手','後手中炮對起馬局','第1步 起馬（若您執黑）');
+    add('後手','後手中炮對起馬局','紅方起馬局開局');
   }
+  // 5. 過宮砲開局 (紅方第1手炮二平六 / 炮八平四)
+  else if(/^砲[二八]平[六四]/.test(m1) && (/^砲二平六/.test(m1) || /^砲八平四/.test(m1))){
+    add('後手','後手中砲對過宮砲','紅方過宮砲開局');
+  }
+  // 6. 士角砲開局 (紅方第1手炮二平四 / 炮八平六)
+  else if(/^砲[二八]平[四六]/.test(m1)){
+    add('後手','後手對士角砲','紅方士角砲開局');
+    add('先手','先手反宮馬（士角砲開局）','先手士角砲（反宮馬）');
+  }
+  
   return hits;
 }
 
 function matchKnownLines(notas){
   const results=[];
+  if(!notas || !notas.length) return results;
+  const early15 = notas.slice(0, 15);
   Object.keys(DATA).forEach(side=>{
     Object.keys(DATA[side]).forEach(cat=>{
       DATA[side][cat].lines.forEach(line=>{
         if(!line.moves || line.moves.length===0) return;
         let n=0;
-        while(n<notas.length && n<line.moves.length &&
-              normalizeNotation(line.moves[n].notation)===notas[n]) n++;
-        if(n>=2) results.push({side,cat,why:'與「'+line.name+'」前'+n+'步完全吻合',score:n});
+        while(n<early15.length && n<line.moves.length &&
+              normalizeNotation(line.moves[n].notation)===early15[n]) n++;
+        if(n>=2) results.push({side, cat, why:'與「'+line.name+'」前'+n+'步吻合', score:n});
       });
     });
   });
@@ -1401,36 +1473,39 @@ function tokenizeRecord(text){
 
 function autoClassify(tokens, result, preferSide){
   const notas = (tokens||[]).map(normalizeNotation);
-  const exact = matchKnownLines(notas);
-  const hits = classifyOpening(notas).filter(h=>!h.cat.includes('總清單'));
-  // 1. 深度吻合（5步以上）優先採用精確比對
-  if(exact.length>0 && exact[0].score>=5) return {side:exact[0].side, cat:exact[0].cat, why:exact[0].why};
-  // 2. 開局特徵判斷
-  if(hits.length>0) return {side:hits[0].side, cat:hits[0].cat, why:hits[0].why};
-  // 3. 淺層吻合
-  if(exact.length>0) return {side:exact[0].side, cat:exact[0].cat, why:exact[0].why};
+  // 取開局前 15 步深入比對現有開局
+  const early15 = notas.slice(0, 15);
+  const exact = matchKnownLines(early15);
+  const hits = classifyOpening(early15).filter(h=>!h.cat.includes('總清單'));
+
+  // 1. 深度吻合（3步以上與現有開局定式吻合）優先歸入該現有開局
+  if(exact.length > 0 && exact[0].score >= 3) return {side: exact[0].side, cat: exact[0].cat, why: exact[0].why};
+  // 2. 開局前 15 步特徵判斷（命中現有開局體系）
+  if(hits.length > 0) return {side: hits[0].side, cat: hits[0].cat, why: hits[0].why};
+  // 3. 淺層吻合（2步吻合）
+  if(exact.length > 0) return {side: exact[0].side, cat: exact[0].cat, why: exact[0].why};
   
-  // 4. 若無符合開局特徵：以勝方歸入先後手開局分類！
+  // 4. 前 15 步皆沒辦法分類到現有開局 ➜ 依勝方歸入「先手勝局」或「後手開局」！
   const resStr = String(result||'').trim();
   if(/紅勝|红胜|紅先勝|红先胜|1-0|red/i.test(resStr)){
-    return {side:'先手', cat:'執紅勝局（自選開局）', why:'依勝方（紅勝）歸入先手'};
+    return {side: '先手', cat: '先手勝局', why: '前15步未合現有定式，依勝方（紅勝）歸入先手勝局'};
   }
   if(/黑勝|黑胜|0-1|black/i.test(resStr)){
-    return {side:'後手', cat:'執黑勝局（自選開局）', why:'依勝方（黑勝）歸入後手'};
+    return {side: '後手', cat: '後手開局', why: '前15步未合現有定式，依勝方（黑勝）歸入後手開局'};
   }
   if(/和|draw|1\/2/i.test(resStr)){
-    const ps = preferSide==='後手'?'後手':'先手';
-    return {side:ps, cat:(ps==='後手'?'後手':'先手')+'和局精選', why:'依和局歸入'+ps};
+    const ps = (preferSide === '後手') ? '後手' : '先手';
+    return {side: ps, cat: (ps === '後手' ? '後手開局' : '先手和局'), why: '前15步未合現有定式，依和局歸入' + ps};
   }
 
-  // 5. 無結果資訊時以預設/當前視角歸入
-  const defSide = (preferSide==='後手')?'後手':'先手';
-  return {side:defSide, cat:(defSide==='後手'?'後手自選開局':'先手自選開局'), why:'未能判斷，依視角歸入'+defSide};
+  // 5. 無結果資訊時以當前視角歸入
+  const defSide = (preferSide === '後手') ? '後手' : '先手';
+  return {side: defSide, cat: (defSide === '後手' ? '後手開局' : '先手勝局'), why: '前15步未合現有定式，依視角歸入' + defSide};
 }
 
 function ensureCategory(side, cat, intro){
   if(!side) side = '先手';
-  if(!cat) cat = (side==='後手'?'後手自選開局':'先手自選開局');
+  if(!cat) cat = (side==='後手'?'後手開局':'先手勝局');
   if(!DATA[side]) DATA[side] = {};
   if(!DATA[side][cat]) {
     DATA[side][cat] = {
@@ -1464,7 +1539,7 @@ function promptAddCategory(defaultSide = '先手') {
 function refreshImportCategoryOptions(){
   const sel = document.getElementById('impCategory');
   if(!sel) return;
-  sel.innerHTML = '<option value="auto">🤖 自動分類（無分類則依勝方歸入）</option>';
+  sel.innerHTML = '<option value="auto">🤖 自動分類（前15步自動分類，無則依勝方歸入）</option>';
   Object.keys(DATA).forEach(side=>{
     Object.keys(DATA[side]).forEach(cat=>{
       const opt=document.createElement('option');
@@ -1486,34 +1561,34 @@ function syncMasterGamesToOpeningTree(gamesList){
     // 判斷開局名稱與先後手陣營
     let side = null, cat = null, why = '';
     
-    // 1. 如果已有明確開局名稱，先查 DATA 先後手
-    if (g.opening && g.opening !== '未分類' && g.opening !== '其他開局') {
+    // 1. 如果已有明確標準開局名稱，先查 DATA 先後手
+    if (g.opening && g.opening !== '未分類' && g.opening !== '其他開局' && g.opening !== '自選開局') {
       if (DATA['先手'] && DATA['先手'][g.opening]) { side = '先手'; cat = g.opening; }
       else if (DATA['後手'] && DATA['後手'][g.opening]) { side = '後手'; cat = g.opening; }
     }
     
-    // 2. 若尚未歸類，以著法自動分類（含勝方歸入）
+    // 2. 若尚未歸類，根據開局前 15 步自動分類至現有開局
     if (!side || !cat) {
       const cls = autoClassify(toks, g.result || '', '先手');
       if (cls) { side = cls.side; cat = cls.cat; why = cls.why; }
     }
     
-    // 3. 若仍無法分類：以勝方歸入先後手開局分類！
+    // 3. 若仍無法分類：依勝方歸入先手勝局或後手開局！
     if (!side || !cat) {
       const res = String(g.result || '').trim();
       if (/紅勝|红胜|紅先勝|红先胜|1-0|red/i.test(res)) {
-        side = '先手'; cat = g.opening || '執紅勝局（大師對局）';
+        side = '先手'; cat = '先手勝局';
       } else if (/黑勝|黑胜|0-1|black/i.test(res)) {
-        side = '後手'; cat = g.opening || '執黑勝局（大師對局）';
+        side = '後手'; cat = '後手開局';
       } else {
-        side = '先手'; cat = g.opening || '大師對局精選';
+        side = '先手'; cat = '先手勝局';
       }
     }
 
-    // 4. 若分類目錄不存在，自動增加目錄
-    ensureCategory(side, cat, `大師對局開局目錄：${cat}`);
+    // 4. 確保分類目錄存在
+    ensureCategory(side, cat, `${side}開局目錄：${cat}`);
 
-    // 5. 檢查此局是否已在該分類下
+    // 5. 檢查此局是否已在該分類下，若無則加入以增加該開局分類盤數！
     const entry = DATA[side][cat];
     const gameTitle = `👑 ${g.red || '紅方'} ${g.result || ''} ${g.black || '黑方'}${g.year ? ' (' + g.year + ')' : ''}`;
     const exists = entry.lines.some(l => (l.gameId && l.gameId === g.id) || l.name === gameTitle);
@@ -1845,9 +1920,11 @@ function buildOpeningTree(){
     const root=document.createElement('div');
     root.style.cssText='margin-bottom:10px';
     const cats=Object.keys(DATA[side]);
+    let sideTotalGames = 0;
+    cats.forEach(c => { sideTotalGames += contentCount(DATA[side][c]); });
     const head=document.createElement('div');
-    head.style.cssText='font-weight:700;font-size:.86rem;color:var(--primary);padding:6px 0;cursor:pointer';
-    head.innerHTML=(side==='先手'?'♟ 先手（執紅）':'♟ 後手（執黑）')+' <span style="font-size:.7rem;color:var(--on-surface-variant)">'+cats.length+' 類</span>';
+    head.style.cssText='font-weight:700;font-size:.86rem;color:var(--primary);padding:6px 0;cursor:pointer;display:flex;justify-content:space-between;align-items:center';
+    head.innerHTML=`<span>${side==='先手'?'♟ 先手（執紅）':'♟ 後手（執黑）'}</span> <span style="font-size:.72rem;color:var(--on-surface-variant);font-weight:600">${cats.length} 類 · 共 ${sideTotalGames} 盤</span>`;
     root.appendChild(head);
     const children=document.createElement('div');
     children.style.cssText='padding-left:6px';
@@ -1858,7 +1935,7 @@ function buildOpeningTree(){
       node.style.cssText='display:flex;align-items:center;gap:6px;padding:7px 4px;font-size:.82rem;cursor:pointer;border-radius:8px';
       const branch=isLast?'└─':'├─';
       const cnt=contentCount(entry);
-      node.innerHTML='<span style="color:var(--outline);font-family:monospace">'+branch+'</span><span>'+iconFor(cat)+'</span><span style="flex:1">'+cat+'</span><span style="font-size:.68rem;color:var(--on-surface-variant)">'+cnt+'項</span>';
+      node.innerHTML=`<span style="color:var(--outline);font-family:monospace">${branch}</span><span>${iconFor(cat)}</span><span style="flex:1">${cat}</span><span style="font-size:.7rem;color:var(--primary);font-weight:700;background:var(--surface-variant);padding:2px 8px;border-radius:10px">${cnt} 盤</span>`;
       node.addEventListener('click',()=>{curSide=side;curCat=cat;
         document.querySelectorAll('.side-seg button').forEach(x=>x.classList.toggle('active',x.dataset.side===side));
         buildCatGrid();buildLineList();
@@ -1938,7 +2015,7 @@ function buildCatGrid(){
   Object.keys(DATA[curSide]).forEach(cat=>{
     const entry=DATA[curSide][cat];
     const card=document.createElement('div');card.className='category-card'+(cat===curCat?' active':'');
-    card.innerHTML=`<span class="ci">${iconFor(cat)}</span><div class="cn">${cat}</div><div class="cc">${contentCount(entry)} 項</div>`;
+    card.innerHTML=`<span class="ci">${iconFor(cat)}</span><div class="cn">${cat}</div><div class="cc">${contentCount(entry)} 盤</div>`;
     card.addEventListener('click',()=>{curCat=cat;buildCatGrid();buildLineList();});
     grid.appendChild(card);
   });
