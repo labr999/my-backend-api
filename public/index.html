@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#8B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="象棋開局">
-<title>象棋小棋聖 V2.9.5 ｜ 象棋開局譜</title>
+<title>象棋小棋聖 V2.9.6 ｜ 象棋開局譜</title>
 <style>
 
 :root{
@@ -1126,7 +1126,7 @@ function classifyOpening(notas){
   if(!notas || notas.length===0) return hits;
   
   // 取前 15 步進行開局深度比對
-  const early15 = notas.slice(0, 15);
+  const early15 = notas.slice(0, 15).map(x => String(x || ''));
   const m1 = early15[0] || '', m2 = early15[1] || '', m3 = early15[2] || '', m4 = early15[3] || '';
   const red = early15.filter((_,i)=>i%2===0);   // 紅方前段著法
   const blk = early15.filter((_,i)=>i%2===1);   // 黑方前段著法
@@ -1137,54 +1137,54 @@ function classifyOpening(notas){
     }
   };
 
-  const isCenterCannon = /^砲[二八]平五/.test(m1) || red.some(n=>/^砲[二八]平五/.test(n));
+  const isCenterCannon = /^[砲炮][二八28]平[五5]/.test(m1) || m1.includes('7,7-4,7') || m1.includes('1,7-4,7') || red.some(n=>/^[砲炮][二八28]平[五5]/.test(n) || n.includes('7,7-4,7') || n.includes('1,7-4,7'));
 
   // 1. 中炮開局體系 (炮二平五 / 炮八平五)
   if(isCenterCannon){
     // 順手砲 (黑第1著同向中砲)
-    if(/^砲8平5/.test(blk[0]||'') || (/^砲[二八]平五/.test(m1) && /^砲8平5/.test(m2))){
+    if(blk.some(n=>/^[砲炮][88八]平[5五]/.test(n) || n.includes('1,2-4,2'))){
       add('先手','中砲對順手砲','紅方中砲，黑方第1著砲8平5（順手砲）');
     }
     // 列手砲 (黑第1著異向中砲)
-    if(/^砲2平5/.test(blk[0]||'') || (/^砲[二八]平五/.test(m1) && /^砲2平5/.test(m2))){
+    if(blk.some(n=>/^[砲炮][22二]平[5五]/.test(n) || n.includes('7,2-4,2'))){
       add('先手','中炮對列手砲','紅方中砲，黑方第1著砲2平5（列手砲）');
     }
     // 半途列砲 (黑方先走馬或車，前15步中平中砲)
-    if(blk.slice(1).some(n=>/^砲[28]平5/.test(n))){
+    if(blk.slice(1).some(n=>/^[砲炮][28二八]平[5五]/.test(n))){
       add('先手','中砲對半途列砲','黑方布陣中途轉列砲對攻（半途列砲）');
     }
     // 左砲封車 (黑砲8進4 / 砲2進4)
-    if(blk.some(n=>/^砲[28]進4/.test(n))){
+    if(blk.some(n=>/^[砲炮][28二八]進[4四]/.test(n) || n.includes('1,2-1,6') || n.includes('7,2-7,6'))){
       add('後手','後手左砲封車','黑方砲進四封鎖紅車（左砲封車）');
       add('先手','左砲封車','黑方左砲封車（紅方視角應法）');
     }
     // 三步虎 (黑方平邊砲 砲2平1 / 砲8平9 出橫車)
-    if(blk.some(n=>/^砲[28]平[19]/.test(n))){
+    if(blk.some(n=>/^[砲炮][28二八]平[19一九]/.test(n) || n.includes('1,2-0,2') || n.includes('7,2-8,2'))){
       add('先手','中砲對三步虎','黑方平邊砲起橫車（三步虎）');
       add('後手','後手中炮對三步虎','黑方三步虎（後手視角）');
     }
     // 反宮馬 (黑方士角砲 砲8平6 / 砲2平4 夾馬)
-    if(blk.some(n=>/^砲[28]平[46]/.test(n))){
+    if(blk.some(n=>/^[砲炮][28二八]平[46四六]/.test(n) || n.includes('1,2-3,2') || n.includes('7,2-5,2'))){
       add('先手','中砲對反宮馬','黑方士角砲夾馬（反宮馬）');
       add('後手','後手反宮馬','黑方反宮馬（後手視角）');
     }
     // 單提馬 (黑方邊馬 馬2進1 / 馬8進9)
-    if(blk.some(n=>/^馬[28]進[19]/.test(n)) && !blk.some(n=>/^馬[28]進[37]/.test(n) && blk.filter(x=>/^馬/.test(x)).length>=2)){
+    if(blk.some(n=>/^馬[28二八]進[19一九]/.test(n) || n.includes('1,0-0,2') || n.includes('7,0-8,2')) && !blk.some(n=>/^馬[28二八]進[37三七]/.test(n) && blk.filter(x=>/^馬/.test(x)).length>=2)){
       add('先手','中砲對單提馬','黑方一正馬一邊馬（單提馬）');
     }
     // 巡河砲 (黑方砲8進2 / 砲2進2)
-    if(blk.some(n=>/^砲[28]進2/.test(n))){
+    if(blk.some(n=>/^[砲炮][28二八]進[2二]/.test(n) || n.includes('1,2-1,4') || n.includes('7,2-7,4'))){
       add('先手','中砲對巡河砲','黑砲進二巡河牽制（巡河砲）');
       add('後手','後手巡河砲','黑方巡河砲（後手視角）');
     }
     // 飛象局 (黑方象3進5 / 象7進5)
-    if(blk.slice(0,3).some(n=>/^象[37]進5/.test(n)) && !blk.some(n=>/^馬[28]進[37]/.test(n) && blk.filter(x=>/^馬/.test(x)).length>=2)){
+    if(blk.slice(0,3).some(n=>/^[相象][37三七]進[5五]/.test(n) || n.includes('6,0-4,2') || n.includes('2,0-4,2')) && !blk.some(n=>/^馬[28二八]進[37三七]/.test(n) && blk.filter(x=>/^馬/.test(x)).length>=2)){
       add('先手','中砲對飛象局','黑方先飛象固防中路');
       add('後手','後手中炮對飛象局','黑方飛象固防（後手視角）');
     }
     // 屏風馬 (黑方前15步雙正馬 馬8進7 + 馬2進3)
-    const hasM87 = blk.some(n=>/^馬8進7/.test(n));
-    const hasM23 = blk.some(n=>/^馬2進3/.test(n));
+    const hasM87 = blk.some(n=>/^馬[88八]進[7七]/.test(n) || n.includes('1,0-2,2'));
+    const hasM23 = blk.some(n=>/^馬[22二]進[3三]/.test(n) || n.includes('7,0-6,2'));
     if(hasM87 && hasM23){
       add('先手','中砲對屏風馬','黑方雙正馬布陣（屏風馬）');
       add('後手','後手中砲對屏風馬','黑方屏風馬（後手視角）');
@@ -1192,35 +1192,39 @@ function classifyOpening(notas){
       add('先手','中砲對屏風馬','黑方正馬（屏風馬系列）');
     }
     // 巡河車 (紅車二進四 / 車八進四)
-    if(red.some(n=>/^車[一二八九]進4/.test(n))){
+    if(red.some(n=>/^車[一二八九1289]進[4四]/.test(n))){
       add('後手','後手中炮對巡河車','紅方巡河車壓制');
     }
     // 直橫車 (紅有一隻直車一隻橫車)
-    if(red.some(n=>/^車[一九]進1/.test(n)) && red.some(n=>/^車[一二八九]平/.test(n))){
+    if(red.some(n=>/^車[一九19]進[1一]/.test(n)) && red.some(n=>/^車[一二八九1289]平/.test(n))){
       add('後手','後手對中砲直橫車','紅方中砲直橫車進攻');
     }
     // 五六砲 (紅方中炮加仕角炮 炮八平六 / 炮二平四)
-    if(red.some(n=>/^砲[二八]平[四六]/.test(n))){
+    if(red.some(n=>/^[砲炮][二八28]平[四六46]/.test(n))){
       add('後手','後手對五六砲','紅方五六砲陣型');
     }
     // 五七炮進三兵 (紅方中炮加七路炮 炮八平七 / 炮二平三 + 兵三進一 / 兵七進一)
-    if(red.some(n=>/^砲[二八]平[三七]/.test(n)) && red.some(n=>/^兵[三七]進1/.test(n))){
+    if(red.some(n=>/^[砲炮][二八28]平[三七37]/.test(n)) && red.some(n=>/^兵[三七37]進[1一]/.test(n))){
       add('先手','中砲五七炮進三兵','紅方五七炮進三兵體系攻堅');
     }
     // 盤頭馬 (紅方雙馬並進連環衝中兵 馬三進五 / 馬七進五)
-    if(red.some(n=>/^馬[三七]進五/.test(n))){
+    if(red.some(n=>/^馬[三七37]進[五5]/.test(n))){
       add('後手','後手中砲破盤頭馬','紅方盤頭馬中路強攻');
     }
     // 敢死砲 (紅方前15步沉底炮急攻 炮八進七 / 炮二進七)
-    if(red.some(n=>/^砲[二八]進7/.test(n))){
+    if(red.some(n=>/^[砲炮][二八28]進[7七]/.test(n))){
       add('後手','後手中炮對敢死砲','紅方敢死砲強攻');
+    }
+    
+    if (hits.length === 0) {
+      add('先手', '中砲對屏風馬', '紅方中砲開局');
     }
   }
   // 2. 仙人指路開局 (紅方第1手挺兵 兵七進一 / 兵三進一)
-  else if(/^兵[三七]進1?一?/.test(m1)){
-    if(blk.some(n=>/^砲[28]平[37]/.test(n))){
+  else if(/^兵[三七37]進[1一]/.test(m1) || m1.includes('6,6-6,5') || m1.includes('2,6-2,5')){
+    if(blk.some(n=>/^[砲炮][28二八]平[37三七]/.test(n) || n.includes('7,2-6,2') || n.includes('1,2-2,2'))){
       add('先手','先手仙人指路對卒底炮','第1步挺兵，黑方卒底砲應對');
-    } else if(blk.some(n=>/^砲[28]平5/.test(n))){
+    } else if(blk.some(n=>/^[砲炮][28二八]平[5五]/.test(n) || n.includes('1,2-4,2') || n.includes('7,2-4,2'))){
       add('後手','後手中炮對仙人指路','紅方挺兵，黑方還架中砲');
     } else {
       add('先手','仙人指路（先手起手式）','紅方挺兵開局（仙人指路）');
@@ -1228,8 +1232,8 @@ function classifyOpening(notas){
     }
   }
   // 3. 飛相局開局 (紅方第1手相七進五 / 相三進五)
-  else if(/^相[三七]進五/.test(m1)){
-    if(blk.some(n=>/^砲[28]平5/.test(n))){
+  else if(/^[相象][三七37]進[5五]/.test(m1) || m1.includes('6,9-4,7') || m1.includes('2,9-4,7')){
+    if(blk.some(n=>/^[砲炮][28二八]平[5五]/.test(n) || n.includes('1,2-4,2') || n.includes('7,2-4,2'))){
       add('後手','後手中炮對飛象局','紅方飛象，黑方還架中砲');
       add('先手','中砲對飛象局','飛相局對中砲');
     } else {
@@ -1237,15 +1241,15 @@ function classifyOpening(notas){
     }
   }
   // 4. 起馬局開局 (紅方第1手馬二進三 / 馬八進七)
-  else if(/^馬[二八]進[三七]/.test(m1)){
+  else if(/^馬[二八28]進[三七37]/.test(m1) || m1.includes('7,9-6,7') || m1.includes('1,9-2,7')){
     add('後手','後手中炮對起馬局','紅方起馬局開局');
   }
   // 5. 過宮砲開局 (紅方第1手炮二平六 / 炮八平四)
-  else if(/^砲[二八]平[六四]/.test(m1) && (/^砲二平六/.test(m1) || /^砲八平四/.test(m1))){
+  else if((/^[砲炮][二八28]平[六四64]/.test(m1) && (/^砲二平六/.test(m1) || /^砲八平四/.test(m1))) || m1.includes('7,7-3,7') || m1.includes('1,7-5,7')){
     add('後手','後手中砲對過宮砲','紅方過宮砲開局');
   }
   // 6. 士角砲開局 (紅方第1手炮二平四 / 炮八平六)
-  else if(/^砲[二八]平[四六]/.test(m1)){
+  else if(/^[砲炮][二八28]平[四六46]/.test(m1) || m1.includes('7,7-5,7') || m1.includes('1,7-3,7')){
     add('後手','後手對士角砲','紅方士角砲開局');
     add('先手','先手反宮馬（士角砲開局）','先手士角砲（反宮馬）');
   }
@@ -1471,8 +1475,129 @@ function tokenizeRecord(text){
   return text.match(MOVE_TOKEN_RE) || [];
 }
 
+function deriveChineseNotations(g) {
+  if (!g) return [];
+  // 1. 若 g.tokens 已經是標準中文記譜
+  if (Array.isArray(g.tokens) && g.tokens.length) {
+    const isChinese = g.tokens.some(t => /[車车馬马砲炮相象仕士帥帅將将兵卒]/.test(String(t)) && /[平進进退]/.test(String(t)));
+    if (isChinese) {
+      return g.tokens.map(t => normalizeNotation(String(t)));
+    }
+  }
+
+  // 2. 若有 exactMoves 或 moves（帶座標）
+  const exact = Array.isArray(g.exactMoves) && g.exactMoves.length ? g.exactMoves : (Array.isArray(g.moves) && g.moves.length ? g.moves : []);
+  if (exact.length && (exact[0].from || exact[0].fc !== undefined)) {
+    const pieces = initialPieces().map(p => ({ ...p, alive: true }));
+    const notations = [];
+    for (let i = 0; i < exact.length; i++) {
+      const mv = exact[i];
+      const fc = mv.from ? mv.from[0] : mv.fc;
+      const fr = mv.from ? mv.from[1] : mv.fr;
+      const tc = mv.to ? mv.to[0] : mv.tc;
+      const tr = mv.to ? mv.to[1] : mv.tr;
+      if (fc === undefined || fr === undefined || tc === undefined || tr === undefined) break;
+      const mover = pieces.find(p => p.alive && p.col === fc && p.row === fr);
+      if (!mover) break;
+      const nota = genNotation(pieces, mover, [fc, fr], [tc, tr]);
+      notations.push(normalizeNotation(nota));
+      const cap = pieces.find(p => p.alive && p.col === tc && p.row === tr && p !== mover);
+      if (cap) cap.alive = false;
+      mover.col = tc; mover.row = tr;
+    }
+    if (notations.length >= 2) return notations;
+  }
+
+  // 3. 若 g.tokens 含有座標字串如 "炮7,7-4,7"
+  if (Array.isArray(g.tokens) && g.tokens.length) {
+    const coords = [];
+    for (const tok of g.tokens) {
+      const m = String(tok).match(/(\d),(\d)-(\d),(\d)/);
+      if (m) coords.push({ from: [+m[1], +m[2]], to: [+m[3], +m[4]] });
+    }
+    if (coords.length) {
+      const pieces = initialPieces().map(p => ({ ...p, alive: true }));
+      const notations = [];
+      for (const mv of coords) {
+        const mover = pieces.find(p => p.alive && p.col === mv.from[0] && p.row === mv.from[1]);
+        if (!mover) break;
+        const nota = genNotation(pieces, mover, mv.from, mv.to);
+        notations.push(normalizeNotation(nota));
+        const cap = pieces.find(p => p.alive && p.col === mv.to[0] && p.row === mv.to[1] && p !== mover);
+        if (cap) cap.alive = false;
+        mover.col = mv.to[0]; mover.row = mv.to[1];
+      }
+      if (notations.length >= 2) return notations;
+    }
+  }
+
+  // 4. 文字著法兜底
+  if (Array.isArray(g.moves) && g.moves.length) {
+    return g.moves.map(m => normalizeNotation(typeof m === 'string' ? m : (m.notation || ''))).filter(Boolean);
+  }
+
+  return [];
+}
+
+function resolveOpeningAlias(name) {
+  if (!name || typeof name !== 'string') return null;
+  const s = name.trim();
+  if (!s || s === '未分類' || s === '其他開局' || s === '自選開局') return null;
+
+  if (DATA['先手'] && DATA['先手'][s]) return { side: '先手', cat: s };
+  if (DATA['後手'] && DATA['後手'][s]) return { side: '後手', cat: s };
+
+  const map = [
+    { re: /屏風馬|屏风马/, side: '先手', cat: '中砲對屏風馬' },
+    { re: /順手[砲炮]|顺手[砲炮]|順[砲炮]|顺[砲炮]/, side: '先手', cat: '中砲對順手砲' },
+    { re: /列手[砲炮]|列[砲炮]/, side: '先手', cat: '中炮對列手砲' },
+    { re: /半途列[砲炮]/, side: '先手', cat: '中砲對半途列砲' },
+    { re: /反[宮宫]馬|反[宮宫]马/, side: '先手', cat: '中砲對反宮馬' },
+    { re: /單提馬|单提马/, side: '先手', cat: '中砲對單提馬' },
+    { re: /三步虎/, side: '先手', cat: '中砲對三步虎' },
+    { re: /卒底[砲炮]/, side: '先手', cat: '先手仙人指路對卒底炮' },
+    { re: /仙人指路|挺兵|進兵/, side: '先手', cat: '仙人指路（先手起手式）' },
+    { re: /飛相|飞相|飛象|飞象/, side: '先手', cat: '中砲對飛象局' },
+    { re: /起馬|起马/, side: '後手', cat: '後手中炮對起馬局' },
+    { re: /過宮[砲炮]|过宫[砲炮]/, side: '後手', cat: '後手中砲對過宮砲' },
+    { re: /士角[砲炮]|仕角[砲炮]/, side: '後手', cat: '後手對士角砲' },
+    { re: /左[砲炮]封車|左[砲炮]封车/, side: '先手', cat: '左砲封車' },
+    { re: /巡河[砲炮]/, side: '先手', cat: '中砲對巡河砲' },
+    { re: /棄馬|弃马/, side: '後手', cat: '後手中炮對過河車棄馬局' },
+    { re: /五七[砲炮]/, side: '先手', cat: '中砲五七炮進三兵' },
+    { re: /五六[砲炮]/, side: '後手', cat: '後手對五六砲' },
+    { re: /盤頭馬|盘头马/, side: '後手', cat: '後手中砲破盤頭馬' },
+    { re: /牛頭滾|牛头滚/, side: '後手', cat: '後手對中炮牛頭滾' },
+    { re: /敢死[砲炮]/, side: '後手', cat: '後手中炮對敢死砲' },
+    { re: /中[砲炮]/, side: '先手', cat: '中砲對屏風馬' }
+  ];
+
+  for (const item of map) {
+    if (item.re.test(s)) {
+      if (DATA[item.side] && DATA[item.side][item.cat]) {
+        return { side: item.side, cat: item.cat };
+      }
+    }
+  }
+  return null;
+}
+
 function autoClassify(tokens, result, preferSide){
-  const notas = (tokens||[]).map(normalizeNotation);
+  let notas = [];
+  if (Array.isArray(tokens) && tokens.length && typeof tokens[0] === 'object' && (tokens[0].from || tokens[0].fc !== undefined)) {
+    notas = deriveChineseNotations({ exactMoves: tokens });
+  } else if (Array.isArray(tokens)) {
+    const isChinese = tokens.some(t => /[車车馬马砲炮相象仕士帥帅將将兵卒]/.test(String(t)) && /[平進进退]/.test(String(t)));
+    if (isChinese) {
+      notas = tokens.map(normalizeNotation);
+    } else {
+      notas = deriveChineseNotations({ tokens });
+    }
+  }
+  if (!notas.length && Array.isArray(tokens)) {
+    notas = tokens.map(normalizeNotation);
+  }
+
   // 取開局前 15 步深入比對現有開局
   const early15 = notas.slice(0, 15);
   const exact = matchKnownLines(early15);
@@ -1552,70 +1677,98 @@ function refreshImportCategoryOptions(){
 
 function syncMasterGamesToOpeningTree(gamesList){
   if (!Array.isArray(gamesList) || !gamesList.length) return;
+
+  // 清除舊的大師對局快取（避免先前未正確分類的暫存殘留）
+  ['先手', '後手'].forEach(side => {
+    Object.keys(DATA[side]).forEach(cat => {
+      DATA[side][cat].lines = DATA[side][cat].lines.filter(l => !l.master);
+    });
+  });
+
   let addedCount = 0;
   for (const g of gamesList) {
-    const exact = Array.isArray(g.exactMoves) ? g.exactMoves : [];
-    const toks = Array.isArray(g.tokens) && g.tokens.length ? g.tokens : (Array.isArray(g.moves) ? g.moves : []);
-    if (!toks || toks.length < 2) continue;
-
-    // 判斷開局名稱與先後手陣營
+    // 1. 取得這盤棋標準中文記譜著法（包含將座標轉為標準中文記譜）
+    const notas = deriveChineseNotations(g);
+    
+    // 2. 判斷開局名稱與先後手陣營
     let side = null, cat = null, why = '';
-    
-    // 1. 如果已有明確標準開局名稱，先查 DATA 先後手
-    if (g.opening && g.opening !== '未分類' && g.opening !== '其他開局' && g.opening !== '自選開局') {
-      if (DATA['先手'] && DATA['先手'][g.opening]) { side = '先手'; cat = g.opening; }
-      else if (DATA['後手'] && DATA['後手'][g.opening]) { side = '後手'; cat = g.opening; }
-    }
-    
-    // 2. 若尚未歸類，根據開局前 15 步自動分類至現有開局
-    if (!side || !cat) {
-      const cls = autoClassify(toks, g.result || '', '先手');
-      if (cls) { side = cls.side; cat = cls.cat; why = cls.why; }
-    }
-    
-    // 3. 若仍無法分類：依勝方歸入先手勝局或後手開局！
-    if (!side || !cat) {
-      const res = String(g.result || '').trim();
-      if (/紅勝|红胜|紅先勝|红先胜|1-0|red/i.test(res)) {
-        side = '先手'; cat = '先手勝局';
-      } else if (/黑勝|黑胜|0-1|black/i.test(res)) {
-        side = '後手'; cat = '後手開局';
-      } else {
-        side = '先手'; cat = '先手勝局';
+
+    // A. 優先根據開局名稱/別名比對
+    if (g.opening) {
+      const resolved = resolveOpeningAlias(g.opening);
+      if (resolved) {
+        side = resolved.side;
+        cat = resolved.cat;
+        why = `東萍開局標註「${g.opening}」`;
       }
     }
 
-    // 4. 確保分類目錄存在
+    // B. 根據前 15 步著法特徵深度自動分類到現有開局
+    if ((!side || !cat) && notas.length >= 2) {
+      const cls = autoClassify(notas, g.result || '', '先手');
+      if (cls && cls.cat !== '先手勝局' && cls.cat !== '後手開局' && cls.cat !== '先手和局') {
+        side = cls.side;
+        cat = cls.cat;
+        why = cls.why;
+      }
+    }
+
+    // C. 若前15步著法仍無法匹配到任何現有開局，才依勝方歸入先手勝局或後手開局
+    if (!side || !cat) {
+      const cls = autoClassify(notas, g.result || '', '先手');
+      if (cls) {
+        side = cls.side;
+        cat = cls.cat;
+        why = cls.why;
+      } else {
+        const res = String(g.result || '').trim();
+        if (/紅勝|红胜|紅先勝|红先胜|1-0|red/i.test(res)) {
+          side = '先手'; cat = '先手勝局';
+        } else if (/黑勝|黑胜|0-1|black/i.test(res)) {
+          side = '後手'; cat = '後手開局';
+        } else {
+          side = '先手'; cat = '先手和局';
+        }
+      }
+    }
+
+    // 3. 確保分類目錄存在
     ensureCategory(side, cat, `${side}開局目錄：${cat}`);
 
-    // 5. 檢查此局是否已在該分類下，若無則加入以增加該開局分類盤數！
+    // 4. 加入該開局分類以增加該開局分類盤數
     const entry = DATA[side][cat];
     const gameTitle = `👑 ${g.red || '紅方'} ${g.result || ''} ${g.black || '黑方'}${g.year ? ' (' + g.year + ')' : ''}`;
-    const exists = entry.lines.some(l => (l.gameId && l.gameId === g.id) || l.name === gameTitle);
-    if (!exists) {
-      let moves = null;
-      if (exact.length === toks.length && exact.length) {
-        moves = exact.map((m, i) => ({ from: m.from, to: m.to, notation: toks[i] || ('第' + (i + 1) + '步') }));
-      } else {
-        try { moves = buildMovesFromNotation(toks); } catch (e) {}
-      }
-      const desc = `${g.year ? g.year + '年 ' : ''}${g.event || ''}｜${g.red || '紅'} 先行 對 ${g.black || '黑'}【${g.result || '未知'}】｜開局：${cat}${g.detailUrl ? `｜<a href="${g.detailUrl}" target="_blank">東萍來源</a>` : ''}`;
-      entry.lines.push({
-        name: gameTitle,
-        desc,
-        moves: moves || [],
-        master: true,
-        gameId: g.id
-      });
-      addedCount++;
+    let moves = null;
+    const exact = Array.isArray(g.exactMoves) ? g.exactMoves : (Array.isArray(g.moves) ? g.moves : []);
+    if (exact.length === notas.length && exact.length) {
+      moves = exact.map((m, i) => ({ from: m.from || [m.fc, m.fr], to: m.to || [m.tc, m.tr], notation: notas[i] || ('第' + (i + 1) + '步') }));
+    } else if (notas.length) {
+      try { moves = buildMovesFromNotation(notas); } catch (e) {}
     }
+    const desc = `${g.year ? g.year + '年 ' : ''}${g.event || ''}｜${g.red || '紅'} 先行 對 ${g.black || '黑'}【${g.result || '未知'}】｜開局：${cat}（${why || '自動分類'}）${g.detailUrl ? `｜<a href="${g.detailUrl}" target="_blank">東萍來源</a>` : ''}`;
+    entry.lines.push({
+      name: gameTitle,
+      desc,
+      moves: moves || [],
+      master: true,
+      gameId: g.id
+    });
+    addedCount++;
   }
 
-  if (addedCount > 0) {
-    refreshImportCategoryOptions();
-    buildCatGrid();
-    buildOpeningTree();
-  }
+  // 5. 若先手勝局/先手和局/後手開局中沒有棋譜，清理空目錄
+  ['先手勝局', '先手和局', '後手開局'].forEach(c => {
+    if (DATA['先手'] && DATA['先手'][c] && DATA['先手'][c].lines.length === 0) {
+      delete DATA['先手'][c];
+    }
+    if (DATA['後手'] && DATA['後手'][c] && DATA['後手'][c].lines.length === 0) {
+      delete DATA['後手'][c];
+    }
+  });
+
+  refreshImportCategoryOptions();
+  buildCatGrid();
+  buildOpeningTree();
 }
 
 let importedGames = [];
@@ -2867,14 +3020,14 @@ async function playMasterGame(id) {
     const r = await fetch('/api/games/' + encodeURIComponent(id));
     if (!r.ok) throw new Error('棋譜載入失敗');
     const g = await r.json();
-    const exact = Array.isArray(g.exactMoves) ? g.exactMoves : [];
-    const toks = Array.isArray(g.tokens) && g.tokens.length ? g.tokens : (Array.isArray(g.moves) ? g.moves : []);
+    const notas = deriveChineseNotations(g);
+    const exact = Array.isArray(g.exactMoves) ? g.exactMoves : (Array.isArray(g.moves) ? g.moves : []);
     
-    if (exact.length === toks.length && exact.length) {
-      currentMoves = exact.map((m, i) => ({ from: m.from, to: m.to, notation: toks[i] || ('第' + (i + 1) + '步') }));
-    } else if (toks.length) {
+    if (exact.length === notas.length && exact.length) {
+      currentMoves = exact.map((m, i) => ({ from: m.from || [m.fc, m.fr], to: m.to || [m.tc, m.tr], notation: notas[i] || ('第' + (i + 1) + '步') }));
+    } else if (notas.length) {
       try {
-        currentMoves = buildMovesFromNotation(toks);
+        currentMoves = buildMovesFromNotation(notas);
       } catch(e) {
         alert('解析棋譜著法發生問題：' + e.message);
         return;
