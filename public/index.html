@@ -1397,6 +1397,8 @@ function isDhtmlXQ(text){ return /\[DhtmlXQ_movelist\]/.test(text); }function pa
 
 function tokenizeRecord(text){
   return text.match(MOVE_TOKEN_RE) || [];
+}
+
 function autoClassify(tokens, result, preferSide){
   const notas = (tokens||[]).map(normalizeNotation);
   const exact = matchKnownLines(notas);
