@@ -2104,6 +2104,23 @@ function buildOpeningTree(){
   });
 }
 
+async function editMasterGameCategory(gameId){
+  const allCats=[];
+  ['先手','後手'].forEach(s=>Object.keys(DATA[s]).forEach(c=>allCats.push(s+'｜'+c)));
+  const opening=prompt('請輸入這盤棋要歸入的開局分類名稱（建議直接輸入下方現有分類其中之一，這樣才能精準對應；輸入新名稱也可以，但要先用「➕ 增加目錄」建立好該分類）：\n\n目前分類：\n'+allCats.join('、'));
+  if(opening===null || !opening.trim()) return;
+  toast('儲存中…');
+  try{
+    const r=await fetch('/api/games/'+encodeURIComponent(gameId)+'/opening',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({opening:opening.trim()})});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error||'儲存失敗');
+    toast('✔ 已更新分類，重新整理棋譜庫中…');
+    await loadMasterGames();
+    buildCatGrid();buildOpeningTree();buildLineList();
+    toast('✔ 分類已更新為「'+opening.trim()+'」，此後同步後端棋庫也會沿用此分類');
+  }catch(e){ toast('修改分類失敗：'+e.message); }
+}
+
 /* ============ Opening Book 搜尋 ============ */
 function openingBookSearch(q){
   const box=document.getElementById('obResults');box.innerHTML='';
@@ -2192,6 +2209,29 @@ function buildLineList(){
     it.style.borderLeftColor=l.master?'var(--master)':(l.moves&&l.moves.length)?'var(--primary)':(l.playlistId?'var(--accent)':'var(--outline)');
     it.innerHTML=`<div class="ln">${l.name} <span style="font-size:.68rem;color:var(--on-surface-variant)">【${lineTag(l)}】</span></div><div class="ld">${l.desc||entry.intro}</div>`;
     it.addEventListener('click',()=>{loadLine(curSide,curCat,i);gotoTab('home');});
+    const play=document.createElement('button');
+    play.textContent='▶ 原棋盤播放';
+    play.style.cssText='margin-top:8px;padding:6px 14px;border:none;border-radius:8px;background:var(--primary);color:#fff;font-size:.76rem;cursor:pointer';
+    play.addEventListener('click',(ev)=>{ev.stopPropagation();loadLine(curSide,curCat,i);gotoTab('home');});
+    it.appendChild(play);
+    if(l.master && l.gameId){
+      // 東萍/大師對局：每次「同步後端棋庫」都會整批重建分類，所以改分類要直接寫回後端 opening 欄位才會真正固定下來
+      const edit=document.createElement('button');
+      edit.textContent='✏️ 修改分類';
+      edit.style.cssText='margin-top:8px;padding:6px 14px;border:none;border-radius:8px;background:var(--surface-variant);color:var(--primary);font-size:.76rem;cursor:pointer';
+      edit.addEventListener('click',(ev)=>{ev.stopPropagation();editMasterGameCategory(l.gameId);});
+      it.appendChild(edit);
+    } else {
+      // 一般匯入棋譜（手動記譜/匯入）：儲存在 importedGames，可用瀏覽器本機的移動分類功能
+      const savedIdx=importedGames.findIndex(g=>g.side===curSide&&g.cat===curCat&&g.name===l.name);
+      if(savedIdx>=0){
+        const move=document.createElement('button');
+        move.textContent='📂 移動分類';
+        move.style.cssText='margin-top:8px;padding:6px 14px;border:none;border-radius:8px;background:var(--surface-variant);color:var(--primary);font-size:.76rem;cursor:pointer';
+        move.addEventListener('click',(ev)=>{ev.stopPropagation();moveSavedGame(savedIdx);buildLineList();});
+        it.appendChild(move);
+      }
+    }
     return it;
   }
   function makeHeader(txt,icon){
@@ -2545,8 +2585,12 @@ function renderSavedList(){
   importedGames.forEach((g,i)=>{
     const d=document.createElement('div');d.className='line-item';d.style.borderLeftColor='var(--accent)';
     d.innerHTML=`<div class="ln">${g.name}</div><div class="ld">${g.side}｜${g.cat}　${g.tokens.length}步</div>`;
+    const btnRow=document.createElement('div');btnRow.style.cssText='display:flex;gap:6px;margin-top:8px';
+    const move=document.createElement('button');
+    move.textContent='📂 移動分類';move.style.cssText='padding:6px 14px;border:none;border-radius:8px;background:var(--surface-variant);color:var(--primary);font-size:.76rem;cursor:pointer';
+    move.addEventListener('click',(ev)=>{ev.stopPropagation();moveSavedGame(i);});
     const del=document.createElement('button');
-    del.textContent='刪除';del.style.cssText='margin-top:8px;padding:6px 14px;border:none;border-radius:8px;background:var(--surface-variant);color:var(--danger);font-size:.76rem;cursor:pointer';
+    del.textContent='刪除';del.style.cssText='padding:6px 14px;border:none;border-radius:8px;background:var(--surface-variant);color:var(--danger);font-size:.76rem;cursor:pointer';
     del.addEventListener('click',(ev)=>{ev.stopPropagation();deleteSavedGame(i);});
     d.addEventListener('click',()=>{
       // 找到該棋譜在 DATA 中的位置並載入
@@ -2554,9 +2598,40 @@ function renderSavedList(){
       const idx=entry?entry.lines.findIndex(l=>l.name===g.name):-1;
       if(idx>=0){loadLine(g.side,g.cat,idx);gotoTab('home');}
     });
-    d.appendChild(del);
+    btnRow.appendChild(move);btnRow.appendChild(del);
+    d.appendChild(btnRow);
     box.appendChild(d);
   });
+}
+
+function moveSavedGame(i){
+  const g=importedGames[i];
+  const sideChoice=prompt('移到哪個陣營？（輸入 1 為「先手/執紅」，輸入 2 為「後手/執黑」，留空表示不變）', g.side==='後手'?'2':'1');
+  if(sideChoice===null) return;
+  const newSide=sideChoice.trim()==='2'?'後手':(sideChoice.trim()==='1'?'先手':g.side);
+  const existingCats=Object.keys(DATA[newSide]).join('、');
+  const catChoice=prompt('移到哪個分類目錄？（可直接輸入現有分類名稱，或輸入新名稱自動建立）\n目前 '+newSide+' 已有分類：\n'+existingCats, g.side===newSide?g.cat:'');
+  if(catChoice===null || !catChoice.trim()) return;
+  const newCat=catChoice.trim();
+  if(newSide===g.side && newCat===g.cat){ toast('分類沒有變更'); return; }
+  // 從舊分類移除對應的 line
+  const oldEntry=DATA[g.side] && DATA[g.side][g.cat];
+  if(oldEntry){ const idx=oldEntry.lines.findIndex(l=>l.name===g.name); if(idx>=0) oldEntry.lines.splice(idx,1); }
+  // 加入新分類（save:false，因為底下手動更新 importedGames 並統一 persistImports）
+  const r=addImportedGame(newSide, newCat, g.name, g.tokens, false, g.meta, g.exactMoves);
+  if(!r.ok){
+    // 加入新分類失敗，復原舊分類避免棋譜整個消失
+    if(oldEntry) addImportedGame(g.side, g.cat, g.name, g.tokens, false, g.meta, g.exactMoves);
+    toast('移動失敗：'+(r.err||'未知錯誤'));
+    return;
+  }
+  g.side=newSide; g.cat=newCat;
+  persistImports();
+  refreshImportCategoryOptions();
+  buildCatGrid();
+  buildOpeningTree();
+  renderSavedList();
+  toast('✔ 已移到「'+newSide+'｜'+newCat+'」');
 }
 
 function deleteSavedGame(i){
