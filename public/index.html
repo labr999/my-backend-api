@@ -3491,12 +3491,13 @@ async function loadMastersList() {
   if (!chips) return;
   try {
     const r = await fetch('/api/dpxq/masters');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
     const j = await r.json();
     chips.innerHTML = (j.items || []).map(p => 
       `<button class="ghost" style="padding:6px 12px;border:none;border-radius:16px;background:var(--surface-variant);color:var(--primary);font-size:.78rem;font-weight:700;cursor:pointer" onclick="syncSpecificPlayer('${p.name}')">👑 ${p.name}</button>`
     ).join('');
   } catch(e) {
-    chips.innerHTML = '<span style="font-size:.74rem;color:var(--on-surface-variant)">無法載入大師清單</span>';
+    chips.innerHTML = '<span style="font-size:.74rem;color:var(--danger)">⚠ 請上傳最新 server.js 至 GitHub 以啟用大師同步介面</span>';
   }
 }
 
@@ -3511,7 +3512,11 @@ async function syncSpecificPlayer(name) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ player: name })
     });
-    const j = await r.json();
+    const text = await r.text();
+    let j;
+    try { j = JSON.parse(text); } catch(err) {
+      throw new Error(r.status === 404 ? '後端 server.js 尚未更新至 V2.9.6（缺少 /api/dpxq 路由），請至 GitHub 上傳 server.js' : '伺服器回應非 JSON 格式');
+    }
     if (!r.ok) throw new Error(j.error || '同步失敗');
     if (msg) msg.textContent = '✅ ' + (j.stats ? j.stats.message : '同步完成');
     toast('✔ ' + name + ' 棋譜同步完成！');
@@ -3652,7 +3657,11 @@ async function testMasterDpxq() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url })
     });
-    const j = await r.json();
+    const text = await r.text();
+    let j;
+    try { j = JSON.parse(text); } catch(err) {
+      throw new Error(r.status === 404 ? '後端 server.js 尚未更新至 V2.9.6（缺少 /api/dpxq/test），請至 GitHub 上傳 server.js' : '伺服器回應非 JSON 格式');
+    }
     if (!r.ok) throw new Error(j.error || '連線失敗');
     msg.className = 'imp-msg ok';
     msg.textContent = '✅ ' + j.title + ' ｜ 連線成功';
@@ -3673,7 +3682,11 @@ async function importMasterDpxq() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url })
     });
-    const j = await r.json();
+    const text = await r.text();
+    let j;
+    try { j = JSON.parse(text); } catch(err) {
+      throw new Error(r.status === 404 ? '後端 server.js 尚未更新至 V2.9.6，請至 GitHub 上傳 server.js' : '伺服器回應非 JSON 格式');
+    }
     if (!r.ok) throw new Error(j.error || '匯入失敗');
     msg.className = 'imp-msg ok';
     msg.textContent = '✅ 完成：新增 ' + j.stats.added + '、重複 ' + j.stats.duplicates + '、錯誤 ' + j.stats.errors;
