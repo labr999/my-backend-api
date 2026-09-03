@@ -2000,11 +2000,16 @@ function syncMasterGamesToOpeningTree(gamesList){
     let moves = null;
     const exact = Array.isArray(g.exactMoves) ? g.exactMoves : (Array.isArray(g.moves) ? g.moves : []);
     if (exact.length) {
-      moves = exact.map((m, i) => ({
-        from: m.from || [m.fc, m.fr],
-        to: m.to || [m.tc, m.tr],
-        notation: notas[i] || (m.notation && /[平進进退]/.test(m.notation) ? m.notation : `第${i+1}步`)
-      }));
+      moves = exact.map((m, i) => {
+        let nota = notas[i];
+        if (!nota && typeof m.notation === 'string' && /[平進进退]/.test(m.notation)) nota = m.notation;
+        if (!nota && typeof m === 'string') nota = m;
+        return {
+          from: m.from || [m.fc, m.fr],
+          to: m.to || [m.tc, m.tr],
+          notation: nota || `第${i+1}步`
+        };
+      });
     } else if (notas.length) {
       try { moves = buildMovesFromNotation(notas); } catch (e) {}
     }
@@ -2264,6 +2269,44 @@ function renderBoard(){
   if(recording) updateRecLive();
 }
 
+function getMoveNotationString(mv, i, arr){
+  if (!mv) return `第${i+1}步`;
+  let txt = '';
+  if (typeof mv === 'string') {
+    txt = mv;
+  } else if (typeof mv === 'object') {
+    if (typeof mv.notation === 'string') {
+      txt = mv.notation;
+    } else if (typeof mv.notation === 'object' && mv.notation !== null) {
+      txt = typeof mv.notation.notation === 'string' ? mv.notation.notation : (typeof mv.notation.name === 'string' ? mv.notation.name : '');
+    } else if (typeof mv.name === 'string') {
+      txt = mv.name;
+    }
+  }
+  // 若 txt 依然是空、或包含 [object、或純座標格式、或尚未含有平進退
+  if (!txt || typeof txt !== 'string' || /object/i.test(txt) || /^\w?\d,\d-\d,\d$/.test(txt) || /^\d{4}$/.test(txt) || !/[平進进退]/.test(txt)) {
+    const from = (mv && mv.from) ? mv.from : (mv && mv.fc !== undefined ? [mv.fc, mv.fr] : null);
+    const to = (mv && mv.to) ? mv.to : (mv && mv.tc !== undefined ? [mv.tc, mv.tr] : null);
+    if (from && to) {
+      try {
+        const bPieces = computeBoardAt(i, arr);
+        let mover = bPieces.find(p => p.alive && p.col === from[0] && p.row === from[1]);
+        if (!mover) {
+          mover = bPieces.find(p => p.col === from[0] && p.row === from[1]);
+          if (mover) mover.alive = true;
+        }
+        if (mover) {
+          txt = normalizeNotation(genNotation(bPieces, mover, from, to));
+        }
+      } catch(e) {}
+    }
+  }
+  if (!txt || typeof txt !== 'string' || /object/i.test(txt)) {
+    txt = `第${i+1}步`;
+  }
+  return normalizeNotation(txt);
+}
+
 function renderMovesList(){
   const arr=recording?recordedMoves:currentMoves;
   const idx=recording?recordedMoves.length:currentIndex;
@@ -2278,15 +2321,8 @@ function renderMovesList(){
     wrap.innerHTML='';
     arr.forEach((mv,i)=>{
       const c=document.createElement('span');c.className='move-chip'+((i===idx-1)?' active':'');
-      let txt = mv.notation || '';
-      if (!txt || /^\w?\d,\d-\d,\d$/.test(txt) || /^\d{4}$/.test(txt)) {
-        if (mv.from && mv.to) {
-          const bPieces = computeBoardAt(i, arr);
-          const mover = bPieces.find(p => p.alive && p.col === mv.from[0] && p.row === mv.from[1]);
-          if (mover) txt = normalizeNotation(genNotation(bPieces, mover, mv.from, mv.to));
-        }
-      }
-      c.textContent=(i+1)+'. '+(txt || mv.notation || ('第'+(i+1)+'步'));
+      const txt = getMoveNotationString(mv, i, arr);
+      c.textContent=(i+1)+'. '+txt;
       if(!recording)c.addEventListener('click',()=>{currentIndex=i+1;renderBoard();analyzePosition();});
       wrap.appendChild(c);
     });
@@ -3180,41 +3216,6 @@ async function openMasterReclassModalById(id) {
   }
 }
 
-async function playMasterGame(id) {
-  try {
-    const r = await fetch('/api/games/' + encodeURIComponent(id));
-    if (!r.ok) throw new Error('棋譜載入失敗');
-    const g = await r.json();
-    const notas = deriveChineseNotations(g);
-    const exact = Array.isArray(g.exactMoves) ? g.exactMoves : (Array.isArray(g.moves) ? g.moves : []);
-    
-    if (exact.length === notas.length && exact.length) {
-      currentMoves = exact.map((m, i) => ({ from: m.from || [m.fc, m.fr], to: m.to || [m.tc, m.tr], notation: notas[i] || ('第' + (i + 1) + '步') }));
-    } else if (notas.length) {
-      try {
-        currentMoves = buildMovesFromNotation(notas);
-      } catch(e) {
-        alert('解析棋譜著法發生問題：' + e.message);
-        return;
-      }
-    } else {
-      alert('此盤棋譜目前僅有索引，尚未收錄完整著法。');
-      return;
-    }
-    
-    currentIndex = 0;
-    document.getElementById('boardTitle').textContent = `${g.red || '紅方'} ${g.result || ''} ${g.black || '黑方'}`;
-    document.getElementById('descBox').innerHTML = `<b>${g.red || '紅方'} 對 ${g.black || '黑方'}</b><br>${g.event || ''}（${g.year || ''}）<br>開局分類：<b>${g.opening || '未分類'}</b><br>來源：${g.detailUrl ? `<a href="${g.detailUrl}" target="_blank">東萍原始棋譜頁</a>` : '東萍公開索引'}<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" onclick="openMasterReclassModalById(${g.id})" style="padding:5px 12px;border:none;border-radius:8px;background:var(--surface-variant);color:var(--primary);font-size:.76rem;font-weight:700;cursor:pointer">✏️ 更改此局開局分類</button> <button type="button" onclick="promptAddCategory('先手')" style="padding:5px 12px;border:none;border-radius:8px;background:var(--surface-variant);color:var(--primary);font-size:.76rem;font-weight:700;cursor:pointer">➕ 增加其他分類</button></div>`;
-    
-    renderMovesList();
-    renderBoard();
-    gotoTab('home');
-    toast('✔ 已載入：' + (g.red || '紅方') + ' 對 ' + (g.black || '黑方'));
-    analyzePosition();
-  } catch(e) {
-    toast('載入失敗：' + e.message);
-  }
-}
 
 document.getElementById('btnBatchImport')?.addEventListener('click', () => {
   const t = document.getElementById('impText').value.trim();
@@ -3661,11 +3662,16 @@ async function playMasterGame(id) {
     const exact = Array.isArray(g.exactMoves) ? g.exactMoves : (Array.isArray(g.moves) ? g.moves : []);
     
     if (exact.length) {
-      currentMoves = exact.map((m, i) => ({
-        from: m.from || [m.fc, m.fr],
-        to: m.to || [m.tc, m.tr],
-        notation: notas[i] || (m.notation && /[平進进退]/.test(m.notation) ? m.notation : `第${i+1}步`)
-      }));
+      currentMoves = exact.map((m, i) => {
+        let nota = notas[i];
+        if (!nota && typeof m.notation === 'string' && /[平進进退]/.test(m.notation)) nota = m.notation;
+        if (!nota && typeof m === 'string') nota = m;
+        return {
+          from: m.from || [m.fc, m.fr],
+          to: m.to || [m.tc, m.tr],
+          notation: nota || `第${i+1}步`
+        };
+      });
     } else if (notas.length) {
       try {
         currentMoves = buildMovesFromNotation(notas);
@@ -3771,10 +3777,26 @@ async function loadServerGameQuery(){
   const id=new URLSearchParams(location.search).get('gameId'); if(!id) return;
   try{
     const r=await fetch('/api/games/'+encodeURIComponent(id),{cache:'no-store'}); if(!r.ok) throw new Error('棋譜不存在');
-    const g=await r.json(); const exact=Array.isArray(g.exactMoves)?g.exactMoves:[]; const toks=Array.isArray(g.moves)?g.moves:[];
-    if(exact.length===toks.length && exact.length){ currentMoves=exact.map((m,i)=>({from:m.from,to:m.to,notation:toks[i]||('第'+(i+1)+'步')})); }
-    else if(toks.length){ try{ currentMoves=buildMovesFromNotation(toks); }catch(e){ alert('這筆棋譜只有 WXF 文字記譜，原棋盤無法自動解析：'+e.message); return; } }
-    else { alert('這筆東萍棋譜尚未完成可播放解析。'); return; } currentIndex=0;
+    const g=await r.json();
+    const notas=deriveChineseNotations(g);
+    const exact=Array.isArray(g.exactMoves)&&g.exactMoves.length?g.exactMoves:(Array.isArray(g.moves)?g.moves:[]);
+    if(exact.length){
+      currentMoves=exact.map((m,i)=>{
+        let nota = notas[i];
+        if(!nota && typeof m.notation==='string' && /[平進进退]/.test(m.notation)) nota = m.notation;
+        if(!nota && typeof m==='string') nota = m;
+        return {
+          from: m.from || [m.fc, m.fr],
+          to: m.to || [m.tc, m.tr],
+          notation: nota || `第${i+1}步`
+        };
+      });
+    } else if(notas.length){
+      try{ currentMoves=buildMovesFromNotation(notas); }catch(e){ alert('這筆棋譜無法自動解析：'+e.message); return; }
+    } else {
+      alert('這筆東萍棋譜尚未完成可播放解析。'); return;
+    }
+    currentIndex=0;
     const title=document.getElementById('boardTitle'); if(title)title.textContent=(g.red||'紅方')+' '+(g.result||'')+' '+(g.black||'黑方');
     const desc=document.getElementById('descBox'); if(desc)desc.innerHTML='<b>東萍完整棋譜</b><br>'+(g.event||'')+'<br>開局：'+(g.opening||'未分類')+'<br>來源：'+(g.detailUrl?'<a href="'+g.detailUrl.replace(/"/g,'&quot;')+'" target="_blank">東萍原始棋譜頁</a>':'東萍公開索引');
     renderMovesList(); renderBoard();
