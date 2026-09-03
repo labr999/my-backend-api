@@ -2646,13 +2646,38 @@ function updatePlayBtn(isPlaying){
   if(lbl) lbl.textContent=isPlaying?'暫停':'播放';
   if(btn) btn.classList.toggle('playing',isPlaying);
 }
-document.getElementById('btnFirst').addEventListener('click',()=>{if(recording)return;if(playTimer){clearInterval(playTimer);playTimer=null;updatePlayBtn(false);}currentIndex=0;renderBoard();analyzePosition();});
-document.getElementById('btnPrev').addEventListener('click',()=>{if(recording)return;if(playTimer){clearInterval(playTimer);playTimer=null;updatePlayBtn(false);}if(currentIndex>0){currentIndex--;renderBoard();analyzePosition();}});
-document.getElementById('btnNext').addEventListener('click',()=>{if(recording)return;if(playTimer){clearInterval(playTimer);playTimer=null;updatePlayBtn(false);}if(currentIndex<currentMoves.length){currentIndex++;renderBoard();analyzePosition();}});
-document.getElementById('btnLast').addEventListener('click',()=>{if(recording)return;if(playTimer){clearInterval(playTimer);playTimer=null;updatePlayBtn(false);}currentIndex=currentMoves.length;renderBoard();analyzePosition();});
+document.getElementById('btnFirst').addEventListener('click',()=>{
+  if(recording){
+    doClearRec();
+    return;
+  }
+  if(playTimer){clearInterval(playTimer);playTimer=null;updatePlayBtn(false);}
+  currentIndex=0;renderBoard();analyzePosition();
+});
+document.getElementById('btnPrev').addEventListener('click',()=>{
+  if(recording){
+    doUndo();
+    return;
+  }
+  if(playTimer){clearInterval(playTimer);playTimer=null;updatePlayBtn(false);}
+  if(currentIndex>0){currentIndex--;renderBoard();analyzePosition();}
+});
+document.getElementById('btnNext').addEventListener('click',()=>{
+  if(recording){
+    toast('記譜模式中，請直接點選棋子走下一步');
+    return;
+  }
+  if(playTimer){clearInterval(playTimer);playTimer=null;updatePlayBtn(false);}
+  if(currentIndex<currentMoves.length){currentIndex++;renderBoard();analyzePosition();}
+});
+document.getElementById('btnLast').addEventListener('click',()=>{
+  if(recording)return;
+  if(playTimer){clearInterval(playTimer);playTimer=null;updatePlayBtn(false);}
+  currentIndex=currentMoves.length;renderBoard();analyzePosition();
+});
 const btnPlay=document.getElementById('btnPlay');
 btnPlay.addEventListener('click',()=>{
-  if(recording)return;
+  if(recording){toast('記譜中無法自動播放，結束記譜後即可播放');return;}
   if(playTimer){clearInterval(playTimer);playTimer=null;updatePlayBtn(false);return;}
   if(currentIndex>=currentMoves.length)currentIndex=0;
   updatePlayBtn(true);
@@ -2664,7 +2689,10 @@ btnPlay.addEventListener('click',()=>{
 
 // 重置開局局面按鈕
 document.getElementById('btnResetBoard')?.addEventListener('click',()=>{
-  if(recording)return;
+  if(recording){
+    doClearRec();
+    return;
+  }
   if(playTimer){clearInterval(playTimer);playTimer=null;updatePlayBtn(false);}
   currentIndex=0;
   renderBoard();
@@ -2695,21 +2723,68 @@ function toggleFlipBoard(){
 }
 document.getElementById('btnFlipBoardTop')?.addEventListener('click',toggleFlipBoard);
 
-/* ============ 記譜 ============ */
+/* ============ 記譜走子與互動 ============ */
 svgEl.addEventListener('click',e=>{
-  if(!recording)return;
-  const pos=boardPosFromEvent(e);if(!pos)return;
+  const pos=boardPosFromEvent(e);
+  if(!pos) return;
+
+  // 1. 若尚未啟動記譜，使用者點擊棋子時自動啟動記譜
+  if(!recording){
+    const basePieces=computeBoardAt(currentIndex, currentMoves);
+    const clickedInit=basePieces.find(p=>p.col===pos[0]&&p.row===pos[1]);
+    if(clickedInit){
+      startRecording(clickedInit.side==='b');
+      selectedPos=pos;
+      renderBoard();
+      toast('已自動啟動'+(clickedInit.side==='r'?'先手':'後手')+'記譜，請點選目標位置走子');
+    } else {
+      toast('請點選上方【先手記譜】或【後手記譜】開始走子記譜');
+    }
+    return;
+  }
+
   const pieces=computeBoardAt(recordedMoves.length,recordedMoves);
   const stm=recordedMoves.length%2===0?'r':'b';
   const clicked=pieces.find(p=>p.col===pos[0]&&p.row===pos[1]);
-  if(!selectedPos){if(clicked&&clicked.side===stm){selectedPos=pos;renderBoard();}return;}
-  if(clicked&&clicked.side===stm&&!(pos[0]===selectedPos[0]&&pos[1]===selectedPos[1])){selectedPos=pos;renderBoard();return;}
-  if(pos[0]===selectedPos[0]&&pos[1]===selectedPos[1]){selectedPos=null;renderBoard();return;}
+
+  // 2. 尚未選中棋子：檢查是否點選當前輪走方棋子
+  if(!selectedPos){
+    if(clicked && clicked.side===stm){
+      selectedPos=pos;
+      renderBoard();
+    } else if(clicked && clicked.side!==stm){
+      toast('現在輪到 '+(stm==='r'?'紅方':'黑方')+' 走子');
+    }
+    return;
+  }
+
+  // 3. 切換選取同方其他棋子
+  if(clicked && clicked.side===stm && !(pos[0]===selectedPos[0] && pos[1]===selectedPos[1])){
+    selectedPos=pos;
+    renderBoard();
+    return;
+  }
+
+  // 4. 點擊原已選中棋子取消選取
+  if(pos[0]===selectedPos[0] && pos[1]===selectedPos[1]){
+    selectedPos=null;
+    renderBoard();
+    return;
+  }
+
+  // 5. 執行走子落子
   const mover=pieces.find(p=>p.col===selectedPos[0]&&p.row===selectedPos[1]);
-  if(!mover){selectedPos=null;renderBoard();return;}
+  if(!mover){
+    selectedPos=null;
+    renderBoard();
+    return;
+  }
   const notation=genNotation(pieces,mover,selectedPos,pos);
   recordedMoves.push({from:[...selectedPos],to:[...pos],notation});
-  selectedPos=null;renderBoard();analyzePosition();
+  selectedPos=null;
+  renderBoard();
+  analyzePosition();
+  toast('已走：'+notation);
 });
 
 const btnRecRed=document.getElementById('btnRecRed'),btnRecBlack=document.getElementById('btnRecBlack');
@@ -2751,15 +2826,48 @@ window.stopRecording=stopRecording;
 btnRecRed?.addEventListener('click',()=>recording?stopRecording():startRecording(false));
 btnRecBlack?.addEventListener('click',()=>recording?stopRecording():startRecording(true));
 document.getElementById('btnLiveStop')?.addEventListener('click',stopRecording);
-function doUndo(){if(!recording||!recordedMoves.length)return;recordedMoves.pop();selectedPos=null;renderBoard();analyzePosition();}
+
+// 悔棋函式（無論記譜中或瀏覽棋譜皆能完美撤回／回到上一手）
+function doUndo(){
+  if(recording){
+    if(recordedMoves.length>0){
+      const popped=recordedMoves.pop();
+      selectedPos=null;
+      renderBoard();
+      analyzePosition();
+      toast('已悔棋（撤回：'+(popped.notation||'上一步')+'）');
+    } else {
+      toast('目前沒有已記錄的著法');
+    }
+  } else {
+    if(currentIndex>0){
+      currentIndex--;
+      renderBoard();
+      analyzePosition();
+      toast('已回到上一手');
+    } else {
+      toast('已在開局首步');
+    }
+  }
+}
 window.doUndo=doUndo;
 document.getElementById('btnUndo')?.addEventListener('click',doUndo);
 document.getElementById('btnLiveUndo')?.addEventListener('click',doUndo);
 
+// 清空／重置函式（記譜中清空記譜回到初始；非記譜中重置開局首步）
 function doClearRec(){
-  if(!recording && !recordedMoves.length){toast('目前沒有記譜紀錄');return;}
-  recordedMoves=[];selectedPos=null;renderBoard();analyzePosition();
-  toast('已清空記譜紀錄');
+  if(recording){
+    recordedMoves=[];
+    selectedPos=null;
+    renderBoard();
+    analyzePosition();
+    toast('已清空記譜盤面，回到初始局面');
+  } else {
+    currentIndex=0;
+    renderBoard();
+    analyzePosition();
+    toast('已重置回初始開局');
+  }
 }
 window.doClearRec=doClearRec;
 document.getElementById('btnClearRec')?.addEventListener('click',doClearRec);
