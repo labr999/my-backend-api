@@ -220,7 +220,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 .drawer-item{display:flex;align-items:center;gap:14px;padding:14px 12px;border-radius:var(--radius-md);cursor:pointer;color:var(--on-surface);font-size:.9rem}
 .drawer-item:active{background:var(--surface-variant)}
 .drawer-item .ic{font-size:1.15rem;width:26px;text-align:center}
-.toast{position:fixed;bottom:calc(80px + var(--safe-bottom));left:50%;transform:translateX(-50%) translateY(120%);background:var(--on-surface);color:var(--surface);padding:12px 20px;border-radius:var(--radius-md);font-size:.86rem;z-index:500;opacity:0;transition:all .35s;box-shadow:var(--shadow-3);max-width:90vw;pointer-events:none}
+.toast{position:fixed;bottom:calc(80px + var(--safe-bottom));left:50%;transform:translateX(-50%) translateY(120%);background:var(--on-surface);color:var(--surface);padding:12px 20px;border-radius:var(--radius-md);font-size:.86rem;z-index:500;opacity:0;transition:all .35s;box-shadow:var(--shadow-3);max-width:90vw}
 .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
 .hidden{display:none !important}
 
@@ -232,7 +232,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 <meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
-<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.8</span> <span id="xq-version-status">●</span></div>
+<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.6</span> <span id="xq-version-status">●</span></div>
 <script>
 (async()=>{try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();const el=document.getElementById('xq-version-status');if(el)el.textContent=d.ok?'● V'+d.version:'● OFFLINE';}catch(e){}})();
 </script>
@@ -284,15 +284,17 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
   <!-- 首頁 -->
   <section class="tab-content active" id="tab-home">
     <div class="home-layout">
-      <!-- 左欄：主要棋盤與完整播放互動列 -->
-      <div class="home-left-col">
-        <div class="card board-card">
+      <!-- 左欄：主要棋盤與完整播放互動列（支援於首頁與棋譜頁之間無縫掛載） -->
+      <div class="home-left-col" id="homeBoardHolder">
+        <div class="card board-card" id="mainBoardCard">
           <div class="board-header">
             <div class="board-title-group">
               <h2 id="boardTitle">象棋開局譜</h2>
               <div class="sub" id="boardSubtitle">傳統經典開局定式 · Pikafish 引擎即時評估</div>
             </div>
             <div class="board-header-badges">
+              <button type="button" class="pill-btn-sm" id="btnTopRecRed" onclick="recording?stopRecording():startRecording(false)" title="開始先手記譜" style="background:var(--red-piece);color:#fff;border-color:var(--red-piece);font-weight:700">🔴 先手記譜</button>
+              <button type="button" class="pill-btn-sm" id="btnTopRecBlack" onclick="recording?stopRecording():startRecording(true)" title="開始後手記譜" style="background:var(--black-piece);color:var(--cream);border-color:var(--black-piece);font-weight:700">⚫ 後手記譜</button>
               <span class="turn-badge" id="turnBadge">—</span>
               <button type="button" class="pill-btn-sm" id="btnFlipBoardTop" title="翻轉棋盤視角">🔄 翻轉</button>
             </div>
@@ -445,61 +447,73 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
   </section>
 
   <!-- 棋譜(記譜/匯入) -->
+  <!-- 棋譜(記譜/匯入) -->
   <section class="tab-content" id="tab-rec">
-    <div class="card">
-      <h3>✎ 記譜工具</h3>
-      <div class="rec-grid">
-        <button class="primary" id="btnRecRed">先手記譜</button>
-        <button class="primary" id="btnRecBlack">後手記譜</button>
-        <button id="btnUndo">悔棋</button>
-        <button id="btnClearRec">清空</button>
-        <button class="accent" id="btnSaveRec">💾 儲存棋譜</button>
-        <button class="accent" id="btnSearchOpen">🔍 搜尋開局影片</button>
-      </div>
-      <div id="searchResults" style="margin-top:10px"></div>
-    </div>
-    <div class="card">
-      <h3>♟ 棋譜著法</h3>
-      <div class="moves" id="movesList"><span class="sr-empty">選擇開局或開始記譜後，著法會顯示在這裡。</span></div>
-    </div>
-    <div class="card" id="savedCard">
-      <div class="collapse-head" id="savedToggle"><h3 style="margin:0">💾 已儲存棋譜 <span id="savedCount" style="font-size:.72rem;color:var(--on-surface-variant);font-weight:400"></span></h3><span class="chev rot" id="savedChev">▼</span></div>
-      <div class="collapse-body open" id="savedBody">
-        <div id="storageInfo" style="font-size:.72rem;color:var(--on-surface-variant);padding-top:8px"></div>
-        <div class="btn-row" style="margin-top:8px">
-          <button class="ghost" id="btnBatchImport" style="flex:1;padding:10px;border:none;border-radius:10px;background:var(--surface-variant);color:var(--on-surface);font-size:.8rem;font-weight:600;cursor:pointer">📦 批次匯入多盤</button>
-          <button class="ghost" id="btnClearAll" style="flex:1;padding:10px;border:none;border-radius:10px;background:var(--surface-variant);color:var(--danger);font-size:.8rem;cursor:pointer">清空全部</button>
+    <div class="home-layout">
+      <!-- 左欄：棋盤動態掛載區（點擊棋譜分頁時棋盤即時顯示於此） -->
+      <div class="home-left-col" id="recBoardHolder"></div>
+
+      <!-- 右欄：記譜與匯入工具 -->
+      <div class="home-right-col">
+        <div class="card">
+          <div class="board-header">
+            <h3 style="margin:0">✎ 記譜工具</h3>
+            <span style="font-size:.76rem;color:var(--primary);font-weight:600">在棋盤上直接點擊棋子即可走子記譜</span>
+          </div>
+          <div class="rec-grid">
+            <button class="primary" id="btnRecRed" onclick="recording?stopRecording():startRecording(false)">先手記譜</button>
+            <button class="primary" id="btnRecBlack" onclick="recording?stopRecording():startRecording(true)">後手記譜</button>
+            <button id="btnUndo" onclick="doUndo()">悔棋</button>
+            <button id="btnClearRec" onclick="doClearRec()">清空</button>
+            <button class="accent" id="btnSaveRec" onclick="saveRecording()">💾 儲存棋譜</button>
+            <button class="accent" id="btnSearchOpen">🔍 搜尋開局影片</button>
+          </div>
+          <div id="searchResults" style="margin-top:10px"></div>
         </div>
-        <div id="savedList" style="padding-top:10px;max-height:420px;overflow-y:auto"></div>
-      </div>
-    </div>
-    <div class="card" id="importCard">
-      <h3>📋 匯入棋譜</h3>
-      <div style="display:flex;gap:6px;margin-bottom:12px">
-        <button id="impModeNormal" class="imp-mode active" style="flex:1;padding:9px;border:none;border-radius:10px;font-size:.82rem;font-weight:600;cursor:pointer;background:var(--primary);color:#fff">一般棋譜</button>
-        <button id="impModeMaster" class="imp-mode" style="flex:1;padding:9px;border:none;border-radius:10px;font-size:.82rem;font-weight:600;cursor:pointer;background:var(--surface-variant);color:var(--on-surface-variant)">👑 大師對局</button>
-      </div>
-      <div id="masterFields" style="display:none">
-        <div style="display:flex;gap:8px">
-          <input class="field" type="text" id="impRed" placeholder="紅方棋手" style="flex:1">
-          <input class="field" type="text" id="impBlack" placeholder="黑方棋手" style="flex:1">
+        <div class="card">
+          <h3>♟ 棋譜著法</h3>
+          <div class="moves" id="movesList"><span class="sr-empty">選擇開局或開始記譜後，著法會顯示在這裡。</span></div>
         </div>
-        <div style="display:flex;gap:8px">
-          <input class="field" type="text" id="impYear" placeholder="年份，如 1974" style="flex:1">
-          <input class="field" type="text" id="impEvent" placeholder="比賽名稱" style="flex:2">
+        <div class="card" id="savedCard">
+          <div class="collapse-head" id="savedToggle"><h3 style="margin:0">💾 已儲存棋譜 <span id="savedCount" style="font-size:.72rem;color:var(--on-surface-variant);font-weight:400"></span></h3><span class="chev rot" id="savedChev">▼</span></div>
+          <div class="collapse-body open" id="savedBody">
+            <div id="storageInfo" style="font-size:.72rem;color:var(--on-surface-variant);padding-top:8px"></div>
+            <div class="btn-row" style="margin-top:8px">
+              <button class="ghost" id="btnBatchImport" style="flex:1;padding:10px;border:none;border-radius:10px;background:var(--surface-variant);color:var(--on-surface);font-size:.8rem;font-weight:600;cursor:pointer">📦 批次匯入多盤</button>
+              <button class="ghost" id="btnClearAll" style="flex:1;padding:10px;border:none;border-radius:10px;background:var(--surface-variant);color:var(--danger);font-size:.8rem;cursor:pointer">清空全部</button>
+            </div>
+            <div id="savedList" style="padding-top:10px;max-height:420px;overflow-y:auto"></div>
+          </div>
         </div>
-        <div style="font-size:.74rem;color:var(--on-surface-variant);margin:2px 2px 6px">開局分類（可用下方選單手動指定，預設自動判斷）</div>
+        <div class="card" id="importCard">
+          <h3>📋 匯入棋譜</h3>
+          <div style="display:flex;gap:6px;margin-bottom:12px">
+            <button id="impModeNormal" class="imp-mode active" style="flex:1;padding:9px;border:none;border-radius:10px;font-size:.82rem;font-weight:600;cursor:pointer;background:var(--primary);color:#fff">一般棋譜</button>
+            <button id="impModeMaster" class="imp-mode" style="flex:1;padding:9px;border:none;border-radius:10px;font-size:.82rem;font-weight:600;cursor:pointer;background:var(--surface-variant);color:var(--on-surface-variant)">👑 大師對局</button>
+          </div>
+          <div id="masterFields" style="display:none">
+            <div style="display:flex;gap:8px">
+              <input class="field" type="text" id="impRed" placeholder="紅方棋手" style="flex:1">
+              <input class="field" type="text" id="impBlack" placeholder="黑方棋手" style="flex:1">
+            </div>
+            <div style="display:flex;gap:8px">
+              <input class="field" type="text" id="impYear" placeholder="年份，如 1974" style="flex:1">
+              <input class="field" type="text" id="impEvent" placeholder="比賽名稱" style="flex:2">
+            </div>
+            <div style="font-size:.74rem;color:var(--on-surface-variant);margin:2px 2px 6px">開局分類（可用下方選單手動指定，預設自動判斷）</div>
+          </div>
+          <input class="field" type="text" id="impName" placeholder="棋譜名稱（可留空自動命名）">
+          <textarea class="field" id="impText" rows="4" placeholder="貼上棋譜（自動辨識格式）：中文記譜／東萍 DhtmlXQ／WXF／ICCS／PGN／FEN／JSON 皆可。"></textarea>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+            <select class="field" id="impCategory" style="flex:1;margin-bottom:0"><option value="auto">🤖 自動分類（無分類則依勝方歸入）</option></select>
+            <button type="button" class="ghost" id="btnAddCustomCat" style="padding:10px 14px;border:none;border-radius:10px;background:var(--surface-variant);color:var(--primary);font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap">➕ 增加目錄</button>
+          </div>
+          <div class="btn-row">
+            <button class="primary" id="btnDoImport">匯入並分類</button>
+          </div>
+          <div class="imp-msg" id="impMsg"></div>
+        </div>
       </div>
-      <input class="field" type="text" id="impName" placeholder="棋譜名稱（可留空自動命名）">
-      <textarea class="field" id="impText" rows="4" placeholder="貼上棋譜（自動辨識格式）：中文記譜／東萍 DhtmlXQ／WXF／ICCS／PGN／FEN／JSON 皆可。"></textarea>
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-        <select class="field" id="impCategory" style="flex:1;margin-bottom:0"><option value="auto">🤖 自動分類（無分類則依勝方歸入）</option></select>
-        <button type="button" class="ghost" id="btnAddCustomCat" style="padding:10px 14px;border:none;border-radius:10px;background:var(--surface-variant);color:var(--primary);font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap">➕ 增加目錄</button>
-      </div>
-      <div class="btn-row">
-        <button class="primary" id="btnDoImport">匯入並分類</button>
-      </div>
-      <div class="imp-msg" id="impMsg"></div>
     </div>
   </section>
 
@@ -627,13 +641,67 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 
 <nav class="bottom-nav">
   <div class="bottom-nav-inner">
-    <button class="bottom-nav-item active" data-tab="home"><span class="ic">🏠</span><span>首頁</span></button>
-    <button class="bottom-nav-item" data-tab="open"><span class="ic">📚</span><span>開局</span></button>
-    <button class="bottom-nav-item" data-tab="rec"><span class="ic">✎</span><span>棋譜</span></button>
-    <button class="bottom-nav-item" data-tab="master"><span class="ic">👑</span><span>大師</span></button>
-    <button class="bottom-nav-item" data-tab="set"><span class="ic">⚙</span><span>設定</span></button>
+    <button type="button" class="bottom-nav-item active" data-tab="home" onclick="switchNavTab('home')"><span class="ic">🏠</span><span>首頁</span></button>
+    <button type="button" class="bottom-nav-item" data-tab="open" onclick="switchNavTab('open')"><span class="ic">📚</span><span>開局</span></button>
+    <button type="button" class="bottom-nav-item" data-tab="rec" onclick="switchNavTab('rec')"><span class="ic">✎</span><span>棋譜</span></button>
+    <button type="button" class="bottom-nav-item" data-tab="master" onclick="switchNavTab('master')"><span class="ic">👑</span><span>大師</span></button>
+    <button type="button" class="bottom-nav-item" data-tab="set" onclick="switchNavTab('set')"><span class="ic">⚙</span><span>設定</span></button>
   </div>
 </nav>
+
+<script>
+// 獨立高優先級分頁切換函式（不受後續其他腳本影響，保證 100% 點擊切換有效）
+function switchNavTab(tabName) {
+  try {
+    var navItems = document.querySelectorAll('.bottom-nav-item');
+    for (var i = 0; i < navItems.length; i++) {
+      if (navItems[i].getAttribute('data-tab') === tabName) {
+        navItems[i].classList.add('active');
+      } else {
+        navItems[i].classList.remove('active');
+      }
+    }
+    var tabContents = document.querySelectorAll('.tab-content');
+    for (var j = 0; j < tabContents.length; j++) {
+      tabContents[j].classList.remove('active');
+    }
+    var targetSec = document.getElementById('tab-' + tabName);
+    if (targetSec) {
+      targetSec.classList.add('active');
+    }
+
+    // 棋盤無縫無損掛載：切換到「棋譜」時掛載至棋譜專屬左欄，切換回首頁時掛回首頁，棋盤隨時可見可走子
+    var boardCard = document.getElementById('mainBoardCard');
+    if (boardCard) {
+      if (tabName === 'rec') {
+        var recHolder = document.getElementById('recBoardHolder');
+        if (recHolder && boardCard.parentNode !== recHolder) {
+          recHolder.appendChild(boardCard);
+          if (typeof renderBoard === 'function') renderBoard();
+        }
+      } else {
+        var homeHolder = document.getElementById('homeBoardHolder');
+        if (homeHolder && boardCard.parentNode !== homeHolder) {
+          homeHolder.appendChild(boardCard);
+          if (typeof renderBoard === 'function') renderBoard();
+        }
+      }
+    }
+
+    if (tabName === 'open') {
+      if (typeof buildCatGrid === 'function') { try { buildCatGrid(); } catch(e) {} }
+      if (typeof buildOpeningTree === 'function') { try { buildOpeningTree(); } catch(e) {} }
+    } else if (tabName === 'master') {
+      if (typeof loadMasterGames === 'function') { try { loadMasterGames(); } catch(e) {} }
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } catch(err) {
+    console.error('switchNavTab error:', err);
+  }
+}
+window.switchNavTab = switchNavTab;
+window.gotoTab = switchNavTab;
+</script>
 
 <div class="toast" id="toast"></div>
 
@@ -2650,27 +2718,51 @@ function startRecording(flip){
   if(playTimer){clearInterval(playTimer);playTimer=null;updatePlayBtn(false);}
   selectedPos=null;
   const a=flip?btnRecBlack:btnRecRed,o=flip?btnRecRed:btnRecBlack;
-  a.textContent='結束記譜';a.classList.add('recording');o.disabled=true;o.style.opacity=.45;
+  if(a){a.textContent='結束記譜';a.classList.add('recording');}
+  if(o){o.disabled=true;o.style.opacity=.45;}
+
+  const topA=flip?document.getElementById('btnTopRecBlack'):document.getElementById('btnTopRecRed');
+  const topO=flip?document.getElementById('btnTopRecRed'):document.getElementById('btnTopRecBlack');
+  if(topA){topA.textContent='結束記譜';topA.classList.add('recording');}
+  if(topO){topO.disabled=true;topO.style.opacity=.45;}
+
   document.getElementById('recLive').classList.add('show');
   document.getElementById('rlMode').textContent=flip?'後手記譜中':'先手記譜中';
-  gotoTab('home');renderBoard();analyzePosition();
+  renderBoard();
+  analyzePosition();
+  toast(flip?'🔴 已開啟後手記譜（黑方視角），請直接點選棋盤走子':'🔴 已開啟先手記譜（紅方視角），請直接點選棋盤走子');
 }
 function stopRecording(){
   recording=false;flipBoard=(curSide==='後手');selectedPos=null;
-  btnRecRed.textContent='先手記譜';btnRecBlack.textContent='後手記譜';
-  btnRecRed.classList.remove('recording');btnRecBlack.classList.remove('recording');
-  btnRecRed.disabled=btnRecBlack.disabled=false;btnRecRed.style.opacity=btnRecBlack.style.opacity='';
+  if(btnRecRed){btnRecRed.textContent='先手記譜';btnRecRed.classList.remove('recording');btnRecRed.disabled=false;btnRecRed.style.opacity='';}
+  if(btnRecBlack){btnRecBlack.textContent='後手記譜';btnRecBlack.classList.remove('recording');btnRecBlack.disabled=false;btnRecBlack.style.opacity='';}
+  const topR=document.getElementById('btnTopRecRed');
+  if(topR){topR.textContent='🔴 先手記譜';topR.classList.remove('recording');topR.disabled=false;topR.style.opacity='';}
+  const topB=document.getElementById('btnTopRecBlack');
+  if(topB){topB.textContent='⚫ 後手記譜';topB.classList.remove('recording');topB.disabled=false;topB.style.opacity='';}
   document.getElementById('recLive').classList.remove('show');
   document.getElementById('searchResults').innerHTML='';
   renderBoard();
+  toast('已結束記譜');
 }
-btnRecRed.addEventListener('click',()=>recording?stopRecording():startRecording(false));
-btnRecBlack.addEventListener('click',()=>recording?stopRecording():startRecording(true));
-document.getElementById('btnLiveStop').addEventListener('click',stopRecording);
+window.startRecording=startRecording;
+window.stopRecording=stopRecording;
+
+btnRecRed?.addEventListener('click',()=>recording?stopRecording():startRecording(false));
+btnRecBlack?.addEventListener('click',()=>recording?stopRecording():startRecording(true));
+document.getElementById('btnLiveStop')?.addEventListener('click',stopRecording);
 function doUndo(){if(!recording||!recordedMoves.length)return;recordedMoves.pop();selectedPos=null;renderBoard();analyzePosition();}
-document.getElementById('btnUndo').addEventListener('click',doUndo);
-document.getElementById('btnLiveUndo').addEventListener('click',doUndo);
-document.getElementById('btnClearRec').addEventListener('click',()=>{if(!recording)return;recordedMoves=[];selectedPos=null;renderBoard();analyzePosition();});
+window.doUndo=doUndo;
+document.getElementById('btnUndo')?.addEventListener('click',doUndo);
+document.getElementById('btnLiveUndo')?.addEventListener('click',doUndo);
+
+function doClearRec(){
+  if(!recording && !recordedMoves.length){toast('目前沒有記譜紀錄');return;}
+  recordedMoves=[];selectedPos=null;renderBoard();analyzePosition();
+  toast('已清空記譜紀錄');
+}
+window.doClearRec=doClearRec;
+document.getElementById('btnClearRec')?.addEventListener('click',doClearRec);
 
 function updateRecLive(){
   document.getElementById('rlCount').textContent=recordedMoves.length+' 步';
@@ -2886,11 +2978,16 @@ document.getElementById('btnSearchOpen').addEventListener('click',()=>{
 
 /* ============ 匯入 ============ */
 function refreshImportCats(){
-  const sel=document.getElementById('impCategory');sel.innerHTML='<option value="auto">🤖 自動分類</option>';
-  Object.keys(DATA).forEach(side=>Object.keys(DATA[side]).forEach(cat=>{const o=document.createElement('option');o.value=side+'|'+cat;o.textContent=side+'｜'+cat;sel.appendChild(o)}))
+  const sel=document.getElementById('impCategory');
+  if(!sel) return;
+  sel.innerHTML='<option value="auto">🤖 自動分類</option>';
+  Object.keys(DATA).forEach(side=>Object.keys(DATA[side]).forEach(cat=>{
+    const o=document.createElement('option');
+    o.value=side+'|'+cat;
+    o.textContent=side+' ｜ '+cat;
+    sel.appendChild(o);
+  }));
 }
-document.getElementById('btnSearchGames')?.addEventListener('click', loadMasterGames);
-document.getElementById('masterGq')?.addEventListener('keydown', e=>{ if(e.key==='Enter') loadMasterGames(); });
 document.getElementById('btnAddCustomCat')?.addEventListener('click', () => promptAddCategory(curSide));
 document.getElementById('btnAddOpenCat')?.addEventListener('click', (e) => { e.stopPropagation(); promptAddCategory(curSide); });
 document.getElementById('btnAddOtherCat')?.addEventListener('click', () => promptAddCategory(curSide));
@@ -2936,9 +3033,45 @@ async function openMasterReclassModalById(id) {
   }
 }
 
+async function playMasterGame(id) {
+  try {
+    const r = await fetch('/api/games/' + encodeURIComponent(id));
+    if (!r.ok) throw new Error('棋譜載入失敗');
+    const g = await r.json();
+    const notas = deriveChineseNotations(g);
+    const exact = Array.isArray(g.exactMoves) ? g.exactMoves : (Array.isArray(g.moves) ? g.moves : []);
+    
+    if (exact.length === notas.length && exact.length) {
+      currentMoves = exact.map((m, i) => ({ from: m.from || [m.fc, m.fr], to: m.to || [m.tc, m.tr], notation: notas[i] || ('第' + (i + 1) + '步') }));
+    } else if (notas.length) {
+      try {
+        currentMoves = buildMovesFromNotation(notas);
+      } catch(e) {
+        alert('解析棋譜著法發生問題：' + e.message);
+        return;
+      }
+    } else {
+      alert('此盤棋譜目前僅有索引，尚未收錄完整著法。');
+      return;
+    }
+    
+    currentIndex = 0;
+    document.getElementById('boardTitle').textContent = `${g.red || '紅方'} ${g.result || ''} ${g.black || '黑方'}`;
+    document.getElementById('descBox').innerHTML = `<b>${g.red || '紅方'} 對 ${g.black || '黑方'}</b><br>${g.event || ''}（${g.year || ''}）<br>開局分類：<b>${g.opening || '未分類'}</b><br>來源：${g.detailUrl ? `<a href="${g.detailUrl}" target="_blank">東萍原始棋譜頁</a>` : '東萍公開索引'}<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" onclick="openMasterReclassModalById(${g.id})" style="padding:5px 12px;border:none;border-radius:8px;background:var(--surface-variant);color:var(--primary);font-size:.76rem;font-weight:700;cursor:pointer">✏️ 更改此局開局分類</button> <button type="button" onclick="promptAddCategory('先手')" style="padding:5px 12px;border:none;border-radius:8px;background:var(--surface-variant);color:var(--primary);font-size:.76rem;font-weight:700;cursor:pointer">➕ 增加其他分類</button></div>`;
+    
+    renderMovesList();
+    renderBoard();
+    gotoTab('home');
+    toast('✔ 已載入：' + (g.red || '紅方') + ' 對 ' + (g.black || '黑方'));
+    analyzePosition();
+  } catch(e) {
+    toast('載入失敗：' + e.message);
+  }
+}
+
 document.getElementById('btnBatchImport')?.addEventListener('click', () => {
   const t = document.getElementById('impText').value.trim();
-  if(!t){toast('請先在下方匯入框貼上多盤棋譜');document.getElementById('importCard').scrollIntoView({behavior:'smooth'});return;}
+  if(!t){toast('隢??其??孵?交?鞎潔?憭璉?');document.getElementById('importCard').scrollIntoView({behavior:'smooth'});return;}
   const games=splitMultiGames(t);
   if(games.length<2){toast('偵測到單盤，請用一般匯入');return;}
   let ok=0,fail=0,lastSide=null,lastCat=null;
@@ -3345,9 +3478,12 @@ async function loadMasterGames() {
       const exact = g.exactMoves || [];
       const stepCnt = exact.length || moves.length;
       return `<div class="line-item" style="border-left:3px solid var(--primary);padding:12px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:6px">
           <div style="font-weight:700;font-size:.88rem"><b>${g.red}</b> <span style="color:var(--accent);font-size:.78rem">【${g.result || '未知'}】</span> <b>${g.black}</b></div>
-          <button style="padding:6px 12px;border:none;border-radius:8px;background:var(--primary);color:#fff;font-size:.76rem;font-weight:700;cursor:pointer" onclick="playMasterGame(${g.id})">▶ 原棋盤播放</button>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button style="padding:6px 12px;border:none;border-radius:8px;background:var(--primary);color:#fff;font-size:.76rem;font-weight:700;cursor:pointer" onclick="playMasterGame(${g.id})">▶ 原棋盤播放</button>
+            <button style="padding:6px 10px;border:none;border-radius:8px;background:var(--surface-variant);color:var(--primary);font-size:.76rem;font-weight:700;cursor:pointer" onclick="openMasterReclassModalById(${g.id})">✏️ 更改分類</button>
+          </div>
         </div>
         <div style="font-size:.74rem;color:var(--on-surface-variant);line-height:1.6">
           ${g.year ? g.year + '年 ' : ''}${g.event || ''} ｜ 開局：<b style="color:var(--primary)">${g.opening || '未分類'}</b> ｜ ${stepCnt} 步可播放
@@ -3517,7 +3653,7 @@ setTimeout(loadServerGameQuery, 250);
 // 攔截 target=_blank
 document.addEventListener('click',function(e){const a=e.target.closest?e.target.closest('a[target="_blank"]'):null;if(!a||!a.href)return;if(a.href.startsWith('data:'))return;e.preventDefault();e.stopPropagation();openExternal(a.href);},true);
 // 啟動畫面
-setTimeout(()=>document.getElementById('splash').classList.add('hidden'),700);
+setTimeout(()=>document.getElementById('splash')?.classList.add('hidden'),700);
 
 </script>
 
@@ -3551,6 +3687,32 @@ if('serviceWorker' in navigator){
   const swUrl = URL.createObjectURL(blob);
   navigator.serviceWorker.register(swUrl).catch(()=>{});
 }
+</script>
+<script>
+// 強制移除 #splash 遮罩保險腳本
+(function() {
+  function forceHideSplash() {
+    var sp = document.getElementById('splash');
+    if (sp) {
+      sp.classList.add('hidden');
+      sp.style.opacity = '0';
+      sp.style.pointerEvents = 'none';
+      setTimeout(function() {
+        if (sp && sp.parentNode) {
+          try { sp.parentNode.removeChild(sp); } catch(e) {}
+        }
+      }, 350);
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', forceHideSplash);
+  } else {
+    forceHideSplash();
+  }
+  window.addEventListener('load', forceHideSplash);
+  setTimeout(forceHideSplash, 800);
+  setTimeout(forceHideSplash, 2000);
+})();
 </script>
 </body>
 </html>
