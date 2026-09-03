@@ -2887,30 +2887,12 @@ document.getElementById('btnSearchOpen').addEventListener('click',()=>{
 /* ============ 匯入 ============ */
 function refreshImportCats(){
   const sel=document.getElementById('impCategory');sel.innerHTML='<option value="auto">🤖 自動分類</option>';
-  Object.keys(DATA).forEach(side=>Object.keys(DATA[side]).forEach(cat=>{const o=document.createElement('option');o.value=side+'|'+cat;o.textContent=s    box.innerHTML = items.slice(0, 100).map(g => {
-      const moves = g.moves || [];
-      const exact = g.exactMoves || [];
-      const stepCnt = exact.length || moves.length;
-      return `<div class="line-item" style="border-left:3px solid var(--primary);padding:12px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:6px">
-          <div style="font-weight:700;font-size:.88rem"><b>${g.red}</b> <span style="color:var(--accent);font-size:.78rem">【${g.result || '未知'}】</span> <b>${g.black}</b></div>
-          <div style="display:flex;gap:6px;align-items:center">
-            <button style="padding:6px 12px;border:none;border-radius:8px;background:var(--primary);color:#fff;font-size:.76rem;font-weight:700;cursor:pointer" onclick="playMasterGame(${g.id})">▶ 原棋盤播放</button>
-            <button style="padding:6px 10px;border:none;border-radius:8px;background:var(--surface-variant);color:var(--primary);font-size:.76rem;font-weight:700;cursor:pointer" onclick="openMasterReclassModalById(${g.id})">✏️ 更改分類</button>
-          </div>
-        </div>
-        <div style="font-size:.74rem;color:var(--on-surface-variant);line-height:1.6">
-          ${g.year ? g.year + '年 ' : ''}${g.event || ''} ｜ 開局：<b style="color:var(--primary)">${g.opening || '未分類'}</b> ｜ ${stepCnt} 步可播放
-        </div>
-        ${(g.tokens && g.tokens.length) ? `<div style="font-size:.72rem;color:var(--on-surface-variant);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:4px">${g.tokens.slice(0,14).join(' ')}…</div>` : ''}
-      </div>`;
-    }).join('');
-  } catch(e) {}
+  Object.keys(DATA).forEach(side=>Object.keys(DATA[side]).forEach(cat=>{const o=document.createElement('option');o.value=side+'|'+cat;o.textContent=side+'｜'+cat;sel.appendChild(o)}))
 }
 document.getElementById('btnSearchGames')?.addEventListener('click', loadMasterGames);
 document.getElementById('masterGq')?.addEventListener('keydown', e=>{ if(e.key==='Enter') loadMasterGames(); });
 document.getElementById('btnAddCustomCat')?.addEventListener('click', () => promptAddCategory(curSide));
-document.getElementById('btnAddOpenCat')?.addEventListener('click', (e) => { e.stopPropagation(); promptAddCategory(curSide)); });
+document.getElementById('btnAddOpenCat')?.addEventListener('click', (e) => { e.stopPropagation(); promptAddCategory(curSide); });
 document.getElementById('btnAddOtherCat')?.addEventListener('click', () => promptAddCategory(curSide));
 
 async function openMasterReclassModalById(id) {
@@ -2954,41 +2936,9 @@ async function openMasterReclassModalById(id) {
   }
 }
 
-async function playMasterGame(id) {
-  try {
-    const r = await fetch('/api/games/' + encodeURIComponent(id));
-    if (!r.ok) throw new Error('棋譜載入失敗');
-    const g = await r.json();
-    const notas = deriveChineseNotations(g);
-    const exact = Array.isArray(g.exactMoves) ? g.exactMoves : (Array.isArray(g.moves) ? g.moves : []);
-    
-    if (exact.length === notas.length && exact.length) {
-      currentMoves = exact.map((m, i) => ({ from: m.from || [m.fc, m.fr], to: m.to || [m.tc, m.tr], notation: notas[i] || ('第' + (i + 1) + '步') }));
-    } else if (notas.length) {
-      try {
-        currentMoves = buildMovesFromNotation(notas);
-      } catch(e) {
-        alert('解析棋譜著法發生問題：' + e.message);
-        return;
-      }
-    } else {
-      alert('此盤棋譜目前僅有索引，尚未收錄完整著法。');
-      return;
-    }
-    
-    currentIndex = 0;
-    document.getElementById('boardTitle').textContent = `${g.red || '紅方'} ${g.result || ''} ${g.black || '黑方'}`;
-    document.getElementById('descBox').innerHTML = `<b>${g.red || '紅方'} 對 ${g.black || '黑方'}</b><br>${g.event || ''}（${g.year || ''}）<br>開局分類：<b>${g.opening || '未分類'}</b><br>來源：${g.detailUrl ? `<a href="${g.detailUrl}" target="_blank">東萍原始棋譜頁</a>` : '東萍公開索引'}<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" onclick="openMasterReclassModalById(${g.id})" style="padding:5px 12px;border:none;border-radius:8px;background:var(--surface-variant);color:var(--primary);font-size:.76rem;font-weight:700;cursor:pointer">✏️ 更改此局開局分類</button> <button type="button" onclick="promptAddCategory('先手')" style="padding:5px 12px;border:none;border-radius:8px;background:var(--surface-variant);color:var(--primary);font-size:.76rem;font-weight:700;cursor:pointer">➕ 增加其他分類</button></div>`;
-    
-    renderMovesList();
-    renderBoard();
-    gotoTab('home');
-    toast('✔ 已載入：' + (g.red || '紅方') + ' 對 ' + (g.black || '黑方'));
-    analyzePosition();
-  } catch(e) {
-    toast('載入失敗：' + e.message);
-  }
-}��下方匯入框貼上多盤棋譜');document.getElementById('importCard').scrollIntoView({behavior:'smooth'});return;}
+document.getElementById('btnBatchImport')?.addEventListener('click', () => {
+  const t = document.getElementById('impText').value.trim();
+  if(!t){toast('請先在下方匯入框貼上多盤棋譜');document.getElementById('importCard').scrollIntoView({behavior:'smooth'});return;}
   const games=splitMultiGames(t);
   if(games.length<2){toast('偵測到單盤，請用一般匯入');return;}
   let ok=0,fail=0,lastSide=null,lastCat=null;
