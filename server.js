@@ -289,6 +289,60 @@ function decodeMoves(binit, movelist) {
   return { exactMoves: exact, tokens, valid, reason, plies: exact.length };
 }
 
+// 自動將既有非中文座標格式（如 砲7,7-4,7）全面轉換為標準中文記譜（如 炮二平五）
+function migrateDbToChinese() {
+  let migrated = 0;
+  for (const g of db.games) {
+    const hasCoordTokens = Array.isArray(g.tokens) && g.tokens.some(t => /^\w?\d,\d-\d,\d$/.test(String(t)));
+    const notChinese = !g.tokens || !g.tokens.length || !g.tokens.some(t => /[平進进退]/.test(String(t)));
+    if (hasCoordTokens || notChinese) {
+      let newTokens = [];
+      let newExact = [];
+      if (g.dpxqBinit && g.dpxqMovelist) {
+        const dec = decodeMoves(g.dpxqBinit, g.dpxqMovelist);
+        if (dec.valid && dec.tokens.length) {
+          newTokens = dec.tokens;
+          newExact = dec.exactMoves;
+        }
+      }
+      if (!newTokens.length && Array.isArray(g.exactMoves) && g.exactMoves.length) {
+        const pieces = decodeBinit(g.dpxqBinit || DEFAULT_BINIT);
+        const exact = [];
+        for (const mv of g.exactMoves) {
+          const fc = mv.from ? mv.from[0] : mv.fc;
+          const fr = mv.from ? mv.from[1] : mv.fr;
+          const tc = mv.to ? mv.to[0] : mv.tc;
+          const tr = mv.to ? mv.to[1] : mv.tr;
+          const mover = pieces.find(p => p.alive && p.col === fc && p.row === fr);
+          if (!mover) break;
+          const nota = genNotationServer(pieces, mover, [fc, fr], [tc, tr]);
+          newTokens.push(nota);
+          exact.push({ from: [fc, fr], to: [tc, tr], notation: nota });
+          const cap = pieces.find(p => p.alive && p.col === tc && p.row === tr && p !== mover);
+          if (cap) cap.alive = false;
+          mover.col = tc; mover.row = tr;
+        }
+        if (newTokens.length >= 2) {
+          newExact = exact;
+        }
+      }
+      if (newTokens.length >= 2) {
+        g.tokens = newTokens;
+        if (newExact.length) {
+          g.exactMoves = newExact;
+          g.moves = newExact;
+        }
+        migrated++;
+      }
+    }
+  }
+  if (migrated > 0) {
+    console.log(`[DB] 已成功將 ${migrated} 盤棋譜的座標著法全面轉為標準中文記譜！`);
+    save();
+  }
+}
+try { migrateDbToChinese(); } catch(e) { console.error('migrateDbToChinese error:', e); }
+
 function classifyOpening(tokens) {
   if (!Array.isArray(tokens) || !tokens.length) return '自選開局';
   const early15 = tokens.slice(0, 15).map(x => String(x || ''));
