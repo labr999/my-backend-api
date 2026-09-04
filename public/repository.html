@@ -24,10 +24,28 @@ async function load(){
     if(!r.ok) throw new Error('HTTP ' + r.status);
     const d=await r.json();
     const items=Array.isArray(d.items)?d.items:[];
-    $('list').innerHTML=items.length?items.map(g=>{const rawMoves=(Array.isArray(g.tokens)&&g.tokens.length)?g.tokens:(g.moves||[]);const moves=rawMoves.map(getDisplayNotation).filter(Boolean);return `<article class="card"><h3>${esc(g.red)} <span class="tag">${esc(g.result||'未知')}</span> ${esc(g.black)}</h3><div class="meta">${esc(g.event||'')}　${g.year||''}<br>開局：${esc(g.opening||'未分類')}　來源：${esc(g.source||'')}</div>${moves.length?`<div class="moves">${moves.map((m,i)=>`${i%2===0?`<b>${Math.floor(i/2)+1}.</b>`:''}${esc(m)} `).join('')}</div>`:`<div class="hint">此筆為索引資料，尚未收錄完整著法。</div>`}<div class="actions"><a href="/game.html?id=${g.id}">查看棋譜</a><a href="/?gameId=${g.id}">原棋盤播放</a>${g.detailUrl?`<a class="alt" href="${esc(g.detailUrl)}" target="_blank">公開棋譜頁</a>`:''}${g.sourceUrl?`<a class="alt" href="${esc(g.sourceUrl)}" target="_blank">東萍來源</a>`:''}</div></article>`}).join(''):`<div class="card empty">找不到符合條件的棋譜。請清空搜尋或點左側棋手。</div>`;
+    $('list').innerHTML=items.length?items.map(g=>{const rawMoves=(Array.isArray(g.tokens)&&g.tokens.length)?g.tokens:(g.moves||[]);const moves=rawMoves.map(getDisplayNotation).filter(Boolean);return `<article class="card"><h3>${esc(g.red)} <span class="tag">${esc(g.result||'未知')}</span> ${esc(g.black)}</h3><div class="meta">${esc(g.event||'')}　${g.year||''}<br>開局：${esc(g.opening||'未分類')}　來源：${esc(g.source||'')}</div>${moves.length?`<div class="moves">${moves.map((m,i)=>`${i%2===0?`<b>${Math.floor(i/2)+1}.</b>`:''}${esc(m)} `).join('')}</div>`:`<div class="hint">此筆為索引資料，尚未收錄完整著法。</div>`}<div class="actions"><a href="/game.html?id=${g.id}">查看棋譜</a><a href="/?gameId=${g.id}">原棋盤播放</a><button class="altBtn" style="padding:8px 10px;border-radius:9px;font-size:.8rem;border:1px solid #ddcfbb;cursor:pointer" onclick="reclassifyGame(${g.id}, '${esc(g.opening||'')}')">✏️ 更改分類</button>${g.detailUrl?`<a class="alt" href="${esc(g.detailUrl)}" target="_blank">公開棋譜頁</a>`:''}${g.sourceUrl?`<a class="alt" href="${esc(g.sourceUrl)}" target="_blank">東萍來源</a>`:''}</div></article>`}).join(''):`<div class="card empty">找不到符合條件的棋譜。請清空搜尋或點左側棋手。</div>`;
   } catch(e) {
     console.error('load error:', e);
     $('list').innerHTML=`<div class="card empty" style="color:#b3261e">棋譜載入遭遇狀況（${esc(e.message)}）。若後端正在重啟中，請稍候 30 秒後重新搜尋。</div>`;
+  }
+}
+async function reclassifyGame(id, currentOpening) {
+  const newCat = prompt('請輸入此棋譜的開局分類名稱（將更新至後端與開局分類樹）：', currentOpening || '');
+  if (newCat === null) return;
+  const trimmed = newCat.trim();
+  if (!trimmed) { alert('開局分類名稱不能為空'); return; }
+  try {
+    const r = await fetch('/api/games/' + encodeURIComponent(id), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ opening: trimmed })
+    });
+    if (!r.ok) throw new Error('伺服器回應 ' + r.status);
+    alert('✔ 開局分類已成功更新為「' + trimmed + '」！');
+    load();
+  } catch(e) {
+    alert('❌ 更改分類失敗：' + e.message);
   }
 }
 let pollTimer=null;

@@ -625,14 +625,49 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
       </div>
       <div style="margin-bottom:16px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <label style="font-size:.78rem;font-weight:700">選擇開局分類：</label>
+          <label style="font-size:.78rem;font-weight:700">選擇現有開局分類：</label>
           <button type="button" onclick="reclassCreateNewCategory()" style="border:none;background:none;color:var(--primary);font-size:.76rem;font-weight:700;cursor:pointer">➕ 建立新分類</button>
         </div>
-        <select id="reclassCatSelect" class="field" style="margin-bottom:0;width:100%"></select>
+        <select id="reclassCatSelect" class="field" style="margin-bottom:10px;width:100%"></select>
+        <label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:6px">或在此手動輸入新開局分類名稱（自動新增樹狀目錄）：</label>
+        <input type="text" id="reclassCustomCatInput" class="field" style="width:100%;margin-bottom:0;box-sizing:border-box" placeholder="例如：五八炮對屏風馬、中炮急進中兵等">
       </div>
       <div style="display:flex;gap:8px">
         <button type="button" onclick="closeReclassModal()" class="ghost" style="flex:1;padding:10px;border-radius:10px;font-size:.84rem;font-weight:600;cursor:pointer">取消</button>
         <button type="button" onclick="confirmReclassify()" class="primary" style="flex:1;padding:10px;border-radius:10px;font-size:.84rem;font-weight:700;cursor:pointer">✔ 確認更改</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 先後手記譜儲存開局分類彈窗 -->
+  <div id="saveRecordModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:999999;align-items:center;justify-content:center;padding:16px">
+    <div class="card" style="max-width:460px;width:100%;background:var(--surface);border-radius:18px;box-shadow:0 12px 36px rgba(0,0,0,0.45);border:1px solid var(--outline);padding:20px;box-sizing:border-box">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h3 style="margin:0;font-size:1.05rem;color:var(--primary);display:flex;align-items:center;gap:6px">💾 儲存棋譜至開局樹狀圖</h3>
+        <button type="button" onclick="closeSaveRecordModal()" style="border:none;background:none;font-size:1.5rem;line-height:1;cursor:pointer;color:var(--on-surface-variant)">&times;</button>
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:6px">棋譜名稱：</label>
+        <input type="text" id="saveRecNameInput" class="field" style="width:100%;box-sizing:border-box" placeholder="請輸入棋譜名稱">
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:6px">選擇所屬陣營：</label>
+        <div class="side-seg" style="margin-bottom:0">
+          <button type="button" id="saveRecSideRed" class="active" onclick="switchSaveRecSide('先手')">先手（執紅）</button>
+          <button type="button" id="saveRecSideBlack" onclick="switchSaveRecSide('後手')">後手（執黑）</button>
+        </div>
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:6px">選擇現有開局分類：</label>
+        <select id="saveRecCatSelect" class="field" style="width:100%;box-sizing:border-box;margin-bottom:0"></select>
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:6px">或在此手動輸入新開局分類名稱（自動新增樹狀目錄）：</label>
+        <input type="text" id="saveRecCustomCatInput" class="field" style="width:100%;box-sizing:border-box;margin-bottom:0" placeholder="例如：五八炮對屏風馬（留空則使用上方選擇）">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button type="button" onclick="closeSaveRecordModal()" class="ghost" style="flex:1;padding:10px;border-radius:10px;font-size:.84rem;font-weight:600;cursor:pointer">取消</button>
+        <button type="button" onclick="confirmSaveRecord()" class="primary" style="flex:1;padding:10px;border-radius:10px;font-size:.84rem;font-weight:700;cursor:pointer">✔ 儲存至樹狀圖</button>
       </div>
     </div>
   </div>
@@ -1828,7 +1863,7 @@ function resolveOpeningAlias(name) {
     { re: /盤頭馬|盘头马/, side: '後手', cat: '後手中砲破盤頭馬' },
     { re: /牛頭滾|牛头滚/, side: '後手', cat: '後手對中炮牛頭滾' },
     { re: /敢死[砲炮]/, side: '後手', cat: '後手中炮對敢死砲' },
-    { re: /中[砲炮]/, side: '先手', cat: '中砲對屏風馬' }
+    { re: /^中[砲炮]$|^中[砲炮]局$/, side: '先手', cat: '中砲對屏風馬' }
   ];
 
   for (const item of map) {
@@ -1869,27 +1904,27 @@ function autoClassify(tokens, result, preferSide){
   // 3. 淺層吻合（2步吻合）
   if(exact.length > 0) return {side: exact[0].side, cat: exact[0].cat, why: exact[0].why};
   
-  // 4. 前 15 步皆沒辦法分類到現有開局 ➜ 依勝方歸入「先手勝局」或「後手開局」！
+  // 4. 前 15 步皆沒辦法分類到現有開局 ➜ 依勝方歸入「先手勝局」或「後手勝局」！
   const resStr = String(result||'').trim();
-  if(/紅勝|红胜|紅先勝|红先胜|1-0|red/i.test(resStr)){
+  if(/紅勝|红胜|紅先勝|红先胜|1-0|red|先勝/i.test(resStr)){
     return {side: '先手', cat: '先手勝局', why: '前15步未合現有定式，依勝方（紅勝）歸入先手勝局'};
   }
-  if(/黑勝|黑胜|0-1|black/i.test(resStr)){
-    return {side: '後手', cat: '後手開局', why: '前15步未合現有定式，依勝方（黑勝）歸入後手開局'};
+  if(/黑勝|黑胜|黑後勝|黑后胜|0-1|black|後勝/i.test(resStr)){
+    return {side: '後手', cat: '後手勝局', why: '前15步未合現有定式，依勝方（黑勝）歸入後手勝局'};
   }
   if(/和|draw|1\/2/i.test(resStr)){
     const ps = (preferSide === '後手') ? '後手' : '先手';
-    return {side: ps, cat: (ps === '後手' ? '後手開局' : '先手和局'), why: '前15步未合現有定式，依和局歸入' + ps};
+    return {side: ps, cat: (ps === '後手' ? '後手和局' : '先手和局'), why: '前15步未合現有定式，依和局歸入' + ps};
   }
 
   // 5. 無結果資訊時以當前視角歸入
   const defSide = (preferSide === '後手') ? '後手' : '先手';
-  return {side: defSide, cat: (defSide === '後手' ? '後手開局' : '先手勝局'), why: '前15步未合現有定式，依視角歸入' + defSide};
+  return {side: defSide, cat: (defSide === '後手' ? '後手勝局' : '先手勝局'), why: '前15步未合現有定式，依視角歸入' + defSide};
 }
 
 function ensureCategory(side, cat, intro){
   if(!side) side = '先手';
-  if(!cat) cat = (side==='後手'?'後手開局':'先手勝局');
+  if(!cat) cat = (side==='後手'?'後手勝局':'先手勝局');
   if(!DATA[side]) DATA[side] = {};
   if(!DATA[side][cat]) {
     DATA[side][cat] = {
@@ -1949,49 +1984,57 @@ function syncMasterGamesToOpeningTree(gamesList){
     // 1. 取得這盤棋標準中文記譜著法（包含將座標轉為標準中文記譜）
     const notas = deriveChineseNotations(g);
     
-    // 2. 判斷開局名稱與先後手陣營
-    let side = null, cat = null, why = '';
+    // 2. 判斷勝方與所屬陣營：紅勝/紅先勝 ➔ 先手；黑勝/黑後勝 ➔ 後手；和棋/未知 ➔ 優先先手
+    const res = String(g.result || '').trim();
+    let winnerSide = '先手';
+    if (/黑勝|黑胜|黑後勝|黑后胜|0-1|black|後勝/i.test(res)) {
+      winnerSide = '後手';
+    } else if (/紅勝|红胜|紅先勝|红先胜|1-0|red|先勝/i.test(res)) {
+      winnerSide = '先手';
+    } else if (/和|draw|1\/2/i.test(res)) {
+      winnerSide = '先手';
+    }
+
+    let side = winnerSide;
+    let cat = null, why = '';
 
     // A. 優先根據開局名稱/別名比對
-    if (g.opening) {
-      const resolved = resolveOpeningAlias(g.opening);
+    if (g.opening && g.opening.trim() && g.opening.trim() !== '未分類') {
+      const opTrim = g.opening.trim();
+      const resolved = resolveOpeningAlias(opTrim);
       if (resolved) {
-        side = resolved.side;
         cat = resolved.cat;
-        why = `東萍開局標註「${g.opening}」`;
-      }
-    }
-
-    // B. 根據前 15 步著法特徵深度自動分類到現有開局
-    if ((!side || !cat) && notas.length >= 2) {
-      const cls = autoClassify(notas, g.result || '', '先手');
-      if (cls && cls.cat !== '先手勝局' && cls.cat !== '後手開局' && cls.cat !== '先手和局') {
-        side = cls.side;
-        cat = cls.cat;
-        why = cls.why;
-      }
-    }
-
-    // C. 若前15步著法仍無法匹配到任何現有開局，才依勝方歸入先手勝局或後手開局
-    if (!side || !cat) {
-      const cls = autoClassify(notas, g.result || '', '先手');
-      if (cls) {
-        side = cls.side;
-        cat = cls.cat;
-        why = cls.why;
+        why = `棋譜標註開局「${opTrim}」`;
       } else {
-        const res = String(g.result || '').trim();
-        if (/紅勝|红胜|紅先勝|红先胜|1-0|red/i.test(res)) {
-          side = '先手'; cat = '先手勝局';
-        } else if (/黑勝|黑胜|0-1|black/i.test(res)) {
-          side = '後手'; cat = '後手開局';
-        } else {
-          side = '先手'; cat = '先手和局';
-        }
+        cat = opTrim;
+        why = `棋譜標註開局「${opTrim}」`;
       }
     }
 
-    // 3. 確保分類目錄存在
+    // B. 若無開局名稱，根據前 15 步著法特徵深度自動分類到現有開局
+    if (!cat && notas.length >= 2) {
+      const cls = autoClassify(notas, g.result || '', winnerSide);
+      if (cls && cls.cat !== '先手勝局' && cls.cat !== '後手勝局' && cls.cat !== '後手開局' && cls.cat !== '先手和局') {
+        cat = cls.cat;
+        why = cls.why;
+      }
+    }
+
+    // C. 若前15步著法仍無法匹配到具體開局，依勝方歸入先手勝局/後手勝局/先手和局
+    if (!cat) {
+      if (/黑勝|黑胜|黑後勝|黑后胜|0-1|black|後勝/i.test(res)) {
+        side = '後手'; cat = '後手勝局'; why = '依勝方（黑勝）歸入後手勝局';
+      } else if (/紅勝|红胜|紅先勝|红先胜|1-0|red|先勝/i.test(res)) {
+        side = '先手'; cat = '先手勝局'; why = '依勝方（紅勝）歸入先手勝局';
+      } else if (/和|draw|1\/2/i.test(res)) {
+        side = '先手'; cat = '先手和局'; why = '和棋歸入先手和局';
+      } else {
+        cat = side === '後手' ? '後手勝局' : '先手勝局';
+        why = '未具體開局，依視角歸入' + cat;
+      }
+    }
+
+    // 3. 確保分類目錄存在（如果開局樹狀圖沒有此開局，自動新增樹狀目錄！）
     ensureCategory(side, cat, `${side}開局目錄：${cat}`);
 
     // 4. 加入該開局分類以增加該開局分類盤數
@@ -2024,8 +2067,8 @@ function syncMasterGamesToOpeningTree(gamesList){
     addedCount++;
   }
 
-  // 5. 若先手勝局/先手和局/後手開局中沒有棋譜，清理空目錄
-  ['先手勝局', '先手和局', '後手開局'].forEach(c => {
+  // 5. 若先手勝局/先手和局/後手勝局/後手開局中沒有棋譜，清理空目錄
+  ['先手勝局', '先手和局', '後手勝局', '後手開局'].forEach(c => {
     if (DATA['先手'] && DATA['先手'][c] && DATA['先手'][c].lines.length === 0) {
       delete DATA['先手'][c];
     }
@@ -2503,6 +2546,8 @@ function openReclassModal(side, cat, idx) {
   if (nameEl) {
     nameEl.innerHTML = `<b>當前棋譜：</b>${line.name}<br><b>目前分類：</b><span style="color:var(--primary);font-weight:700">${side} ｜ ${cat}</span>`;
   }
+  const customInp = document.getElementById('reclassCustomCatInput');
+  if (customInp) customInp.value = '';
 
   switchReclassSide(side);
   if (modal) modal.style.display = 'flex';
@@ -2554,10 +2599,12 @@ async function confirmReclassify() {
   if (!__reclassContext) return;
   const { side: oldSide, cat: oldCat, idx, line, targetSide } = __reclassContext;
   const sel = document.getElementById('reclassCatSelect');
-  const targetCat = sel ? sel.value : null;
+  const customInput = document.getElementById('reclassCustomCatInput');
+  const customCat = customInput ? customInput.value.trim() : '';
+  const targetCat = customCat || (sel ? sel.value : null);
 
   if (!targetCat) {
-    alert('請選擇有效的目標開局分類');
+    alert('請選擇或手動輸入有效的目標開局分類');
     return;
   }
 
@@ -2566,7 +2613,7 @@ async function confirmReclassify() {
     return;
   }
 
-  // 1. 確保目標分類存在
+  // 1. 確保目標分類存在（自動新增樹狀目錄）
   ensureCategory(targetSide, targetCat, `${targetSide}開局目錄：${targetCat}`);
 
   // 2. 從原分類移出
@@ -3094,31 +3141,85 @@ async function tryCloud(pieces,stm,seq){
 }
 document.getElementById('btnAnalyzeNow').addEventListener('click',analyzePosition);
 
-/* ============ 儲存記譜 ============ */
-function saveRecording(){
+/* ============ 儲存記譜（支援手動選擇/輸入開局分類並存入樹狀圖） ============ */
+let __saveRecSide = '先手';
+let __saveRecTokens = [];
+let __saveRecMoves = [];
+
+function openSaveRecordModal(){
   if(!recording){toast('請先開始記譜');return;}
   if(recordedMoves.length<2){toast('記譜不足2步');return;}
-  const prefer=flipBoard?'後手':'先手';
-  const tokens=recordedMoves.map(m=>m.notation);
-  const cls=classifyForSave(tokens,prefer);
-  const side=cls?cls.side:prefer,cat=cls?cls.cat:'匯入棋譜（未分類）',why=cls?cls.why:'未能判斷，放入未分類';
-  const defName=(flipBoard?'後手記譜':'先手記譜')+'（'+Math.ceil(tokens.length/2)+'回合）#'+(importedGames.length+1);
-  // 手動輸入名稱(可留空用預設)
-  let name=prompt('請輸入棋譜名稱（可留空使用預設）：\n將分類至 '+side+'｜'+cat, defName);
-  if(name===null)return;              // 取消
-  name=name.trim()||defName;
-  const r=addImportedGame(side,cat,name,tokens);
-  if(!r.ok){toast('儲存失敗');return;}
+  __saveRecSide = flipBoard ? '後手' : '先手';
+  __saveRecTokens = recordedMoves.map(m=>m.notation);
+  __saveRecMoves = [...recordedMoves];
+  
+  const cls = classifyForSave(__saveRecTokens, __saveRecSide);
+  const detectedCat = cls ? cls.cat : '';
+  const defName = (__saveRecSide==='後手'?'後手記譜':'先手記譜')+'（'+Math.ceil(__saveRecTokens.length/2)+'回合）#'+(importedGames.length+1);
+
+  const nameInput = document.getElementById('saveRecNameInput');
+  if (nameInput) nameInput.value = defName;
+
+  const customInput = document.getElementById('saveRecCustomCatInput');
+  if (customInput) customInput.value = '';
+
+  switchSaveRecSide(__saveRecSide, detectedCat);
+
+  const modal = document.getElementById('saveRecordModal');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeSaveRecordModal(){
+  const modal = document.getElementById('saveRecordModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function switchSaveRecSide(side, selectCat){
+  __saveRecSide = side;
+  const bRed = document.getElementById('saveRecSideRed');
+  const bBlack = document.getElementById('saveRecSideBlack');
+  if (bRed) bRed.classList.toggle('active', side === '先手');
+  if (bBlack) bBlack.classList.toggle('active', side === '後手');
+
+  const sel = document.getElementById('saveRecCatSelect');
+  if (!sel) return;
+  sel.innerHTML = '';
+  const cats = Object.keys(DATA[side] || {});
+  cats.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = `${c} (${DATA[side][c].lines.length} 盤)`;
+    if (selectCat && c === selectCat) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  if (sel.options.length > 0 && !sel.value) sel.selectedIndex = 0;
+}
+
+async function confirmSaveRecord(){
+  const nameInput = document.getElementById('saveRecNameInput');
+  const customInput = document.getElementById('saveRecCustomCatInput');
+  const sel = document.getElementById('saveRecCatSelect');
+
+  const name = (nameInput ? nameInput.value.trim() : '') || '記譜棋譜';
+  const customCat = customInput ? customInput.value.trim() : '';
+  const targetCat = customCat || (sel ? sel.value : null) || (__saveRecSide === '後手' ? '後手勝局' : '先手勝局');
+  const side = __saveRecSide;
+  const tokens = __saveRecTokens;
+
+  ensureCategory(side, targetCat, `${side}開局目錄：${targetCat}`);
+  const r = addImportedGame(side, targetCat, name, tokens, true, null, __saveRecMoves);
+  if(!r.ok){ toast('儲存失敗：' + (r.err || '未知錯誤')); return; }
+
   try {
     fetch('/api/games', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        red: prefer === '先手' ? '本機先手' : '未知紅方',
-        black: prefer === '後手' ? '本機後手' : '未知黑方',
+        red: side === '先手' ? '本機先手' : '未知紅方',
+        black: side === '後手' ? '本機後手' : '未知黑方',
         tokens,
         moves: tokens,
-        opening: cat,
+        opening: targetCat,
         source: 'local-record',
         event: name,
         date: new Date().toISOString().slice(0, 10)
@@ -3127,14 +3228,24 @@ function saveRecording(){
       if(d.ok) loadMasterGames();
     }).catch(()=>{});
   } catch(e) {}
-  recordedMoves=[];stopRecording();
-  toast('✔ 已存入 '+side+'｜'+cat);
-  curSide=side;curCat=cat;
-  loadLine(side,cat,DATA[side][cat].lines.length-1);
-  refreshImportCats();
+
+  recordedMoves = [];
+  stopRecording();
+  closeSaveRecordModal();
+  toast(`✔ 已存入樹狀圖【${side}｜${targetCat}】`);
+  curSide = side;
+  curCat = targetCat;
+  refreshImportCategoryOptions();
+  buildCatGrid();
+  buildOpeningTree();
+  loadLine(side, targetCat, DATA[side][targetCat].lines.length - 1);
 }
-document.getElementById('btnSaveRec').addEventListener('click',saveRecording);
-document.getElementById('btnLiveSave').addEventListener('click',saveRecording);
+
+function saveRecording(){
+  openSaveRecordModal();
+}
+document.getElementById('btnSaveRec').addEventListener('click', openSaveRecordModal);
+document.getElementById('btnLiveSave').addEventListener('click', openSaveRecordModal);
 
 /* ============ 搜尋開局 ============ */
 document.getElementById('btnSearchOpen').addEventListener('click',()=>{
@@ -3219,7 +3330,7 @@ async function openMasterReclassModalById(id) {
 
 document.getElementById('btnBatchImport')?.addEventListener('click', () => {
   const t = document.getElementById('impText').value.trim();
-  if(!t){toast('隢??其??孵?交?鞎潔?憭璉?');document.getElementById('importCard').scrollIntoView({behavior:'smooth'});return;}
+  if(!t){toast('請在上方貼上包含多盤棋譜的文字');document.getElementById('importCard').scrollIntoView({behavior:'smooth'});return;}
   const games=splitMultiGames(t);
   if(games.length<2){toast('偵測到單盤，請用一般匯入');return;}
   let ok=0,fail=0,lastSide=null,lastCat=null;
@@ -3828,7 +3939,26 @@ refreshImportCats();
     refreshImportCats();
     if(document.getElementById('savedList'))renderSavedList();
   }
+  await syncAllBackendGamesToTree();
 })();
+
+async function syncAllBackendGamesToTree(){
+  try{
+    const r = await fetch('/api/games?limit=1000');
+    if(!r.ok) return;
+    const d = await r.json();
+    const items = d.items || [];
+    if(items.length){
+      syncMasterGamesToOpeningTree(items);
+      refreshImportCategoryOptions();
+      buildCatGrid();
+      buildOpeningTree();
+    }
+  }catch(e){
+    console.warn('自動同步後端棋譜至開局樹狀圖失敗:', e);
+  }
+}
+
 // 預設載入第一個開局
 curCat=Object.keys(DATA['先手'])[0];
 loadLine('先手',curCat,0);
@@ -3846,23 +3976,19 @@ setTimeout(()=>document.getElementById('splash')?.classList.add('hidden'),700);
 </script>
 
 <script>
-// V2.2：把舊版/救援後端的歷史棋譜同步回原本的棋譜播放介面。
+// V2.2/V2.9.6：將後端棋譜庫全面自動分類並同步至開局樹狀圖
 document.getElementById('syncBackendHistory')?.addEventListener('click', async ()=>{
   const btn=document.getElementById('syncBackendHistory'); btn.disabled=true; btn.textContent='⏳ 同步中…';
   try{
-    const r=await fetch('/api/games?limit=1000'); const d=await r.json(); let ok=0,skip=0;
-    for(const g of (d.items||[])){
-      if(g.source!=='legacy-index') continue;
-      const tokens=Array.isArray(g.tokens)&&g.tokens.length?g.tokens:(Array.isArray(g.moves)?g.moves.map(m=>typeof m==='string'?m:m.notation).filter(Boolean):[]);
-      if(tokens.length<2) {skip++; continue;}
-      const side='先手', cat=g.opening||'後端棋庫匯入';
-      if(!DATA[side][cat]) DATA[side][cat]={intro:'由 V2.2 後端同步的歷史棋譜',lines:[]};
-      if(importedGames.some(x=>x.name===g.name)) {skip++;continue;}
-      const meta={master:true,red:g.red,black:g.black,year:g.year||'',event:g.event||'',result:g.result||''};
-      const rr=addImportedGame(side,cat,g.name||(`${g.red} 對 ${g.black}`),tokens,true,meta,g.exactMoves||null);
-      if(rr.ok) ok++;
-    }
-    refreshImportCats(); renderSavedList(); toast(`後端同步完成：${ok} 盤${skip?`，略過 ${skip} 筆`:''}`);
+    const r=await fetch('/api/games?limit=1000'); const d=await r.json();
+    const items = d.items || [];
+    syncMasterGamesToOpeningTree(items);
+    refreshImportCats();
+    refreshImportCategoryOptions();
+    buildCatGrid();
+    buildOpeningTree();
+    if(document.getElementById('savedList')) renderSavedList();
+    toast(`✔ 後端棋譜庫同步完成：已將 ${items.length} 盤棋譜分類至開局樹狀圖！`);
   }catch(e){toast('同步失敗：'+e.message)}
   btn.disabled=false; btn.textContent='☁ 同步後端棋庫';
 });
