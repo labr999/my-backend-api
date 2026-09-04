@@ -328,16 +328,26 @@ function migrateDbToChinese() {
       }
       if (newTokens.length >= 2) {
         g.tokens = newTokens;
+        g.moves = newTokens;
         if (newExact.length) {
           g.exactMoves = newExact;
-          g.moves = newExact;
         }
         migrated++;
       }
     }
   }
+  // 全面校正：確保所有棋譜的 moves 皆為標準中文記譜字串陣列（非帶座標對象）
+  for (const g of db.games) {
+    if (Array.isArray(g.tokens) && g.tokens.length) {
+      const isMovesObj = Array.isArray(g.moves) && g.moves.length && typeof g.moves[0] === 'object';
+      if (isMovesObj || !Array.isArray(g.moves) || !g.moves.length) {
+        g.moves = g.tokens.map(t => typeof t === 'string' ? t : (t.notation || String(t)));
+        migrated++;
+      }
+    }
+  }
   if (migrated > 0) {
-    console.log(`[DB] 已成功將 ${migrated} 盤棋譜的座標著法全面轉為標準中文記譜！`);
+    console.log(`[DB] 已成功將 ${migrated} 盤棋譜的著法全面轉為標準中文記譜！`);
     save();
   }
 }
@@ -541,7 +551,7 @@ async function importOne(url) {
         opening: b.opening || classifyOpening(d.tokens),
         tokens: d.tokens,
         exactMoves: d.exactMoves,
-        moves: d.exactMoves,
+        moves: d.tokens,
         source: 'dpxq-sync',
         sourceUrl: 'http://www.dpxq.com/',
         detailUrl: url,
@@ -608,7 +618,19 @@ app.get('/api/players/:name', (q, s) => {
     else if (/^紅|^红/.test(g.result || '')) isRed ? wins++ : losses++;
     else if (/^黑/.test(g.result || '')) !isRed ? wins++ : losses++;
   }
-  s.json({ player: { ...p, games: games.length }, games, stats: { games: games.length, wins, losses, draws, winRate: (wins + losses + draws) ? Number((wins / (wins + losses + draws) * 100).toFixed(1)) : 0 } });
+function sanitizeGame(g) {
+  if (!g) return g;
+  const toks = Array.isArray(g.tokens) ? g.tokens : [];
+  const rawMoves = Array.isArray(g.moves) ? g.moves : [];
+  const cleanMoves = (toks.length ? toks : rawMoves).map(m => typeof m === 'string' ? m : (m && m.notation ? m.notation : '')).filter(Boolean);
+  return {
+    ...g,
+    tokens: toks.length ? toks : cleanMoves,
+    moves: cleanMoves
+  };
+}
+
+  s.json({ player: { ...p, games: games.length }, games: games.map(sanitizeGame), stats: { games: games.length, wins, losses, draws, winRate: (wins + losses + draws) ? Number((wins / (wins + losses + draws) * 100).toFixed(1)) : 0 } });
 });
 
 app.get('/api/games', (q, s) => {
@@ -620,18 +642,18 @@ app.get('/api/games', (q, s) => {
     (!year || String(g.year || '') === String(year)) &&
     (!playable || ((g.exactMoves?.length || g.moves?.length) > 0))
   );
-  s.json({ items: a.sort((x, y) => y.id - x.id).slice(0, 1000), total: a.length });
+  s.json({ items: a.sort((x, y) => y.id - x.id).slice(0, 1000).map(sanitizeGame), total: a.length });
 });
 
 app.get('/api/games/:id', (q, s) => {
   const g = db.games.find(x => String(x.id) === String(q.params.id));
   if (!g) return s.status(404).json({ error: '找不到棋譜' });
-  s.json(g);
+  s.json(sanitizeGame(g));
 });
 
 app.post('/api/games', (q, s) => {
   const r = addGame(q.body || {});
-  s.status(r.duplicate ? 200 : 201).json({ ok: true, duplicate: r.duplicate, game: r.game });
+  s.status(r.duplicate ? 200 : 201).json({ ok: true, duplicate: r.duplicate, game: sanitizeGame(r.game) });
 });
 
 app.patch('/api/games/:id', (q, s) => {
