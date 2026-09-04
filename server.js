@@ -606,18 +606,6 @@ app.get('/api/players', (q, s) => {
   s.json({ items, total: items.length });
 });
 
-app.get('/api/players/:name', (q, s) => {
-  const name = decodeURIComponent(q.params.name);
-  const p = db.players.find(x => x.name === name || toSimp(x.name) === toSimp(name));
-  if (!p) return s.status(404).json({ error: '找不到棋手' });
-  const games = db.games.filter(g => g.red === p.name || g.black === p.name || toSimp(g.red) === toSimp(p.name) || toSimp(g.black) === toSimp(p.name)).sort((a, b) => (b.year || 0) - (a.year || 0) || b.id - a.id);
-  let wins = 0, losses = 0, draws = 0;
-  for (const g of games) {
-    const isRed = g.red === p.name || toSimp(g.red) === toSimp(p.name);
-    if (/和/.test(g.result || '')) draws++;
-    else if (/^紅|^红/.test(g.result || '')) isRed ? wins++ : losses++;
-    else if (/^黑/.test(g.result || '')) !isRed ? wins++ : losses++;
-  }
 function sanitizeGame(g) {
   if (!g) return g;
   const toks = Array.isArray(g.tokens) ? g.tokens : [];
@@ -630,25 +618,66 @@ function sanitizeGame(g) {
   };
 }
 
+app.get('/api/players/:name', (q, s) => {
+  const name = decodeURIComponent(q.params.name);
+  const p = db.players.find(x => x.name === name || toSimp(x.name) === toSimp(name));
+  if (!p) return s.status(404).json({ error: '找不到棋手' });
+  const games = db.games.filter(g => g.red === p.name || g.black === p.name || toSimp(g.red) === toSimp(p.name) || toSimp(g.black) === toSimp(p.name)).sort((a, b) => (b.year || 0) - (a.year || 0) || b.id - a.id);
+  let wins = 0, losses = 0, draws = 0;
+  for (const g of games) {
+    const isRed = g.red === p.name || toSimp(g.red) === toSimp(p.name);
+    if (/和/.test(g.result || '')) draws++;
+    else if (/^紅|^红/.test(g.result || '')) isRed ? wins++ : losses++;
+    else if (/^黑/.test(g.result || '')) !isRed ? wins++ : losses++;
+  }
   s.json({ player: { ...p, games: games.length }, games: games.map(sanitizeGame), stats: { games: games.length, wins, losses, draws, winRate: (wins + losses + draws) ? Number((wins / (wins + losses + draws) * 100).toFixed(1)) : 0 } });
 });
 
 app.get('/api/games', (q, s) => {
-  const { q: term = '', player = '', opening = '', year = '', playable = '' } = q.query;
-  let a = db.games.filter(g =>
-    (!term || [g.red, g.black, g.event, g.opening, g.tokens.join(' ')].some(x => String(x || '').includes(term) || toSimp(String(x || '')).includes(toSimp(term)))) &&
-    (!player || g.red === player || g.black === player || toSimp(g.red) === toSimp(player) || toSimp(g.black) === toSimp(player)) &&
-    (!opening || g.opening === opening) &&
-    (!year || String(g.year || '') === String(year)) &&
-    (!playable || ((g.exactMoves?.length || g.moves?.length) > 0))
-  );
-  s.json({ items: a.sort((x, y) => y.id - x.id).slice(0, 1000).map(sanitizeGame), total: a.length });
+  try {
+    const { q: term = '', player = '', opening = '', year = '', playable = '' } = q.query;
+    const termStr = String(term || '').trim();
+    const playerStr = String(player || '').trim();
+    const openingStr = String(opening || '').trim();
+    const yearStr = String(year || '').trim();
+
+    let a = (db.games || []).filter(g => {
+      if (!g) return false;
+      if (termStr) {
+        const toksStr = Array.isArray(g.tokens) ? g.tokens.join(' ') : '';
+        const fields = [g.red, g.black, g.event, g.opening, toksStr];
+        const hit = fields.some(x => {
+          const str = String(x || '');
+          return str.includes(termStr) || toSimp(str).includes(toSimp(termStr));
+        });
+        if (!hit) return false;
+      }
+      if (playerStr) {
+        const r = String(g.red || '');
+        const b = String(g.black || '');
+        const hit = (r === playerStr || b === playerStr || toSimp(r) === toSimp(playerStr) || toSimp(b) === toSimp(playerStr));
+        if (!hit) return false;
+      }
+      if (openingStr && String(g.opening || '') !== openingStr) return false;
+      if (yearStr && String(g.year || '') !== yearStr) return false;
+      if (playable && (!((g.exactMoves?.length || g.moves?.length) > 0))) return false;
+      return true;
+    });
+    s.json({ items: a.sort((x, y) => (y.id || 0) - (x.id || 0)).slice(0, 1000).map(sanitizeGame), total: a.length });
+  } catch(err) {
+    console.error('API /api/games error:', err);
+    s.status(500).json({ error: '獲取棋譜失敗：' + err.message, items: [], total: 0 });
+  }
 });
 
 app.get('/api/games/:id', (q, s) => {
-  const g = db.games.find(x => String(x.id) === String(q.params.id));
-  if (!g) return s.status(404).json({ error: '找不到棋譜' });
-  s.json(sanitizeGame(g));
+  try {
+    const g = db.games.find(x => String(x.id) === String(q.params.id));
+    if (!g) return s.status(404).json({ error: '找不到棋譜' });
+    s.json(sanitizeGame(g));
+  } catch(err) {
+    s.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/games', (q, s) => {
