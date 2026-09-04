@@ -804,6 +804,7 @@ function parseToken(str){
 }
 
 function computeDestForPiece(piece, side, category, action, target){
+  if(!piece) return [0, 0];
   const fromCol=piece.col, fromRow=piece.row;
   let toCol, toRow;
   if(category==='R'||category==='C'||category==='P'||category==='K'){
@@ -856,7 +857,8 @@ function applyNotation(state, side, str){
     const blocked = state.some(p=>p.alive && p.side===side && p!==cand && p.col===d[0] && p.row===d[1]);
     if(!blocked){ piece=cand; dest=d; break; }
   }
-  if(!dest) dest = computeDestForPiece(piece, side, category, action, target);
+  if(!dest && piece) dest = computeDestForPiece(piece, side, category, action, target);
+  if(!piece || !dest) return {from:[0,0], to:[0,0]};
   const fromCol=piece.col, fromRow=piece.row;
   const [toCol,toRow]=dest;
   const captured = state.find(p=>p.alive && p.side!==side && p.col===toCol && p.row===toRow);
@@ -2366,7 +2368,21 @@ function renderMovesList(){
       const c=document.createElement('span');c.className='move-chip'+((i===idx-1)?' active':'');
       const txt = getMoveNotationString(mv, i, arr);
       c.textContent=(i+1)+'. '+txt;
-      if(!recording)c.addEventListener('click',()=>{currentIndex=i+1;renderBoard();analyzePosition();});
+      c.addEventListener('click',()=>{
+        if(recording){
+          if(recordedMoves.length === 0){
+            stopRecording();
+            currentIndex=i+1;renderBoard();analyzePosition();
+            return;
+          }
+          if(confirm('目前正在記譜中，是否結束記譜並跳轉至此著法？')){
+            stopRecording();
+            currentIndex=i+1;renderBoard();analyzePosition();
+          }
+          return;
+        }
+        currentIndex=i+1;renderBoard();analyzePosition();
+      });
       wrap.appendChild(c);
     });
     if(wrap.id==='homeMoves'){
@@ -2770,36 +2786,102 @@ function updatePlayBtn(isPlaying){
 }
 document.getElementById('btnFirst').addEventListener('click',()=>{
   if(recording){
+    if(recordedMoves.length === 0 && currentMoves && currentMoves.length > 0){
+      stopRecording();
+      currentIndex=0;renderBoard();analyzePosition();
+      toast('已退出記譜模式，回到棋譜首步');
+      return;
+    }
     doClearRec();
     return;
   }
   if(playTimer){clearInterval(playTimer);playTimer=null;updatePlayBtn(false);}
   currentIndex=0;renderBoard();analyzePosition();
+  toast('已回到開局首步（第 0 步）');
 });
 document.getElementById('btnPrev').addEventListener('click',()=>{
   if(recording){
-    doUndo();
+    if(recordedMoves.length > 0){
+      doUndo();
+      return;
+    }
+    if(currentMoves && currentMoves.length > 0){
+      stopRecording();
+      currentIndex = 0;
+      renderBoard();
+      analyzePosition();
+      toast('已退出記譜模式（初始局面）');
+      return;
+    }
     return;
   }
   if(playTimer){clearInterval(playTimer);playTimer=null;updatePlayBtn(false);}
-  if(currentIndex>0){currentIndex--;renderBoard();analyzePosition();}
+  if(currentIndex>0){
+    currentIndex--;
+    renderBoard();
+    analyzePosition();
+  } else {
+    toast('已在開局首步（第 0 步）');
+  }
 });
 document.getElementById('btnNext').addEventListener('click',()=>{
   if(recording){
-    toast('記譜模式中，請直接點選棋子走下一步');
+    // 狀況 1：若在記譜模式但尚未記錄任何走子，且目前有載入棋譜：自動退出記譜模式並播放第 1 步
+    if(recordedMoves.length === 0 && currentMoves && currentMoves.length > 0){
+      stopRecording();
+      currentIndex = Math.min(1, currentMoves.length);
+      renderBoard();
+      analyzePosition();
+      toast('已退出記譜模式，開始播放棋譜（第 ' + currentIndex + ' 步）');
+      return;
+    }
+    // 狀況 2：若在記譜模式且有悔棋紀錄 (Redo)，點「下一手」等於重做下一步
+    if(window.__recRedoStack && window.__recRedoStack.length > 0){
+      const nextMv = window.__recRedoStack.pop();
+      recordedMoves.push(nextMv);
+      renderBoard();
+      analyzePosition();
+      toast('重做走子：' + (nextMv.notation || '下一步'));
+      return;
+    }
+    // 狀況 3：記譜模式中且無可前進步數
+    toast('記譜模式中：請直接點選棋盤走下一步，或點選【結束記譜】切換回棋譜播放');
     return;
   }
   if(playTimer){clearInterval(playTimer);playTimer=null;updatePlayBtn(false);}
-  if(currentIndex<currentMoves.length){currentIndex++;renderBoard();analyzePosition();}
+  if(currentIndex<currentMoves.length){
+    currentIndex++;
+    renderBoard();
+    analyzePosition();
+  } else {
+    toast('已至最後一步（共 ' + currentMoves.length + ' 步，全局結束）');
+  }
 });
 document.getElementById('btnLast').addEventListener('click',()=>{
-  if(recording)return;
+  if(recording){
+    if(recordedMoves.length === 0 && currentMoves && currentMoves.length > 0){
+      stopRecording();
+      currentIndex=currentMoves.length;renderBoard();analyzePosition();
+      toast('已退出記譜模式，跳至棋譜尾步');
+      return;
+    }
+    return;
+  }
   if(playTimer){clearInterval(playTimer);playTimer=null;updatePlayBtn(false);}
   currentIndex=currentMoves.length;renderBoard();analyzePosition();
+  toast('已跳至棋譜尾步（第 ' + currentIndex + ' 步）');
 });
 const btnPlay=document.getElementById('btnPlay');
 btnPlay.addEventListener('click',()=>{
-  if(recording){toast('記譜中無法自動播放，結束記譜後即可播放');return;}
+  if(recording){
+    if(recordedMoves.length === 0 && currentMoves && currentMoves.length > 0){
+      stopRecording();
+      toast('已退出記譜模式，開始自動播放');
+    } else {
+      toast('記譜中無法自動播放，結束記譜後即可播放');
+      return;
+    }
+  }
   if(playTimer){clearInterval(playTimer);playTimer=null;updatePlayBtn(false);return;}
   if(currentIndex>=currentMoves.length)currentIndex=0;
   updatePlayBtn(true);
@@ -2850,8 +2932,18 @@ svgEl.addEventListener('click',e=>{
   const pos=boardPosFromEvent(e);
   if(!pos) return;
 
-  // 1. 若尚未啟動記譜，使用者點擊棋子時自動啟動記譜
+  // 1. 若尚未啟動記譜
   if(!recording){
+    // 若目前有載入棋譜（正在播放或瀏覽棋譜），點選棋子不應強制中斷播放跳入記譜模式
+    if(currentMoves && currentMoves.length > 0){
+      const basePieces=computeBoardAt(currentIndex, currentMoves);
+      const clickedInit=basePieces.find(p=>p.col===pos[0]&&p.row===pos[1]);
+      if(clickedInit){
+        toast('💡 棋譜播放模式：請點下方【下一手】瀏覽著法；若要自己手動走子記譜，請點上方【先手記譜】或【後手記譜】');
+      }
+      return;
+    }
+    // 若目前盤面完全無棋譜，點擊棋子才啟動記譜
     const basePieces=computeBoardAt(currentIndex, currentMoves);
     const clickedInit=basePieces.find(p=>p.col===pos[0]&&p.row===pos[1]);
     if(clickedInit){
@@ -2903,6 +2995,7 @@ svgEl.addEventListener('click',e=>{
   }
   const notation=genNotation(pieces,mover,selectedPos,pos);
   recordedMoves.push({from:[...selectedPos],to:[...pos],notation});
+  window.__recRedoStack = [];
   selectedPos=null;
   renderBoard();
   analyzePosition();
@@ -2912,6 +3005,7 @@ svgEl.addEventListener('click',e=>{
 const btnRecRed=document.getElementById('btnRecRed'),btnRecBlack=document.getElementById('btnRecBlack');
 function startRecording(flip){
   recording=true;flipBoard=flip;
+  window.__recRedoStack = [];
   if(playTimer){clearInterval(playTimer);playTimer=null;updatePlayBtn(false);}
   selectedPos=null;
   const a=flip?btnRecBlack:btnRecRed,o=flip?btnRecRed:btnRecBlack;
@@ -2931,6 +3025,7 @@ function startRecording(flip){
 }
 function stopRecording(){
   recording=false;flipBoard=(curSide==='後手');selectedPos=null;
+  window.__recRedoStack = [];
   if(btnRecRed){btnRecRed.textContent='先手記譜';btnRecRed.classList.remove('recording');btnRecRed.disabled=false;btnRecRed.style.opacity='';}
   if(btnRecBlack){btnRecBlack.textContent='後手記譜';btnRecBlack.classList.remove('recording');btnRecBlack.disabled=false;btnRecBlack.style.opacity='';}
   const topR=document.getElementById('btnTopRecRed');
@@ -2954,6 +3049,8 @@ function doUndo(){
   if(recording){
     if(recordedMoves.length>0){
       const popped=recordedMoves.pop();
+      if(!window.__recRedoStack) window.__recRedoStack = [];
+      window.__recRedoStack.push(popped);
       selectedPos=null;
       renderBoard();
       analyzePosition();
@@ -3818,45 +3915,60 @@ document.getElementById('masterGq')?.addEventListener('keydown', e=>{ if(e.key==
 document.getElementById('btnAddCustomCat')?.addEventListener('click', () => promptAddCategory(curSide));
 document.getElementById('btnAddOpenCat')?.addEventListener('click', (e) => { e.stopPropagation(); promptAddCategory(curSide); });
 
+function parseGameMoves(g) {
+  if (!g) return [];
+  const notas = deriveChineseNotations(g);
+  const rawExact = (Array.isArray(g.exactMoves) && g.exactMoves.length) ? g.exactMoves : (Array.isArray(g.moves) && g.moves.length ? g.moves : []);
+  const hasCoordinates = rawExact.length > 0 && typeof rawExact[0] === 'object' && rawExact[0] !== null && (
+    (Array.isArray(rawExact[0].from) && rawExact[0].from.length === 2 && rawExact[0].from[0] !== undefined) ||
+    (rawExact[0].fc !== undefined && rawExact[0].fr !== undefined)
+  );
+
+  if (hasCoordinates) {
+    return rawExact.map((m, i) => {
+      let nota = (notas && notas[i]) ? notas[i] : null;
+      if (!nota && typeof m.notation === 'string' && /[平進进退]/.test(m.notation)) nota = m.notation;
+      if (!nota && typeof m === 'string') nota = m;
+      const fc = (Array.isArray(m.from) && m.from[0] !== undefined) ? m.from[0] : m.fc;
+      const fr = (Array.isArray(m.from) && m.from[1] !== undefined) ? m.from[1] : m.fr;
+      const tc = (Array.isArray(m.to) && m.to[0] !== undefined) ? m.to[0] : m.tc;
+      const tr = (Array.isArray(m.to) && m.to[1] !== undefined) ? m.to[1] : m.tr;
+      return {
+        from: [fc, fr],
+        to: [tc, tr],
+        notation: nota || `第${i+1}步`
+      };
+    });
+  } else if (notas && notas.length > 0) {
+    return buildMovesFromNotation(notas);
+  }
+  return [];
+}
+
 async function playMasterGame(id) {
   try {
     const r = await fetch('/api/games/' + encodeURIComponent(id));
     if (!r.ok) throw new Error('棋譜載入失敗');
     const g = await r.json();
-    const notas = deriveChineseNotations(g);
-    const exact = Array.isArray(g.exactMoves) ? g.exactMoves : (Array.isArray(g.moves) ? g.moves : []);
-    
-    if (exact.length) {
-      currentMoves = exact.map((m, i) => {
-        let nota = notas[i];
-        if (!nota && typeof m.notation === 'string' && /[平進进退]/.test(m.notation)) nota = m.notation;
-        if (!nota && typeof m === 'string') nota = m;
-        return {
-          from: m.from || [m.fc, m.fr],
-          to: m.to || [m.tc, m.tr],
-          notation: nota || `第${i+1}步`
-        };
-      });
-    } else if (notas.length) {
-      try {
-        currentMoves = buildMovesFromNotation(notas);
-      } catch(e) {
-        alert('解析棋譜著法發生問題：' + e.message);
-        return;
-      }
-    } else {
+    const moves = parseGameMoves(g);
+    if (!moves || !moves.length) {
       alert('此盤棋譜目前僅有索引，尚未收錄完整著法。');
       return;
     }
     
+    if (recording) stopRecording();
+    recording = false;
+    recordedMoves = [];
+    currentMoves = moves;
     currentIndex = 0;
+    flipBoard = false;
     document.getElementById('boardTitle').textContent = `${g.red || '紅方'} ${g.result || ''} ${g.black || '黑方'}`;
     document.getElementById('descBox').innerHTML = `<b>${g.red || '紅方'} 對 ${g.black || '黑方'}</b><br>${g.event || ''}（${g.year || ''}）<br>開局分類：<b>${g.opening || '未分類'}</b><br>來源：${g.detailUrl ? `<a href="${g.detailUrl}" target="_blank">東萍原始棋譜頁</a>` : '東萍公開索引'}`;
     
     renderMovesList();
     renderBoard();
     gotoTab('home');
-    toast('✔ 已載入：' + (g.red || '紅方') + ' 對 ' + (g.black || '黑方'));
+    toast('✔ 已載入：' + (g.red || '紅方') + ' 對 ' + (g.black || '黑方') + '（共 ' + currentMoves.length + ' 步），請按【下一手】開始播放');
     analyzePosition();
   } catch(e) {
     toast('載入失敗：' + e.message);
@@ -3943,30 +4055,22 @@ async function loadServerGameQuery(){
   try{
     const r=await fetch('/api/games/'+encodeURIComponent(id),{cache:'no-store'}); if(!r.ok) throw new Error('棋譜不存在');
     const g=await r.json();
-    const notas=deriveChineseNotations(g);
-    const exact=Array.isArray(g.exactMoves)&&g.exactMoves.length?g.exactMoves:(Array.isArray(g.moves)?g.moves:[]);
-    if(exact.length){
-      currentMoves=exact.map((m,i)=>{
-        let nota = notas[i];
-        if(!nota && typeof m.notation==='string' && /[平進进退]/.test(m.notation)) nota = m.notation;
-        if(!nota && typeof m==='string') nota = m;
-        return {
-          from: m.from || [m.fc, m.fr],
-          to: m.to || [m.tc, m.tr],
-          notation: nota || `第${i+1}步`
-        };
-      });
-    } else if(notas.length){
-      try{ currentMoves=buildMovesFromNotation(notas); }catch(e){ alert('這筆棋譜無法自動解析：'+e.message); return; }
-    } else {
+    const moves = parseGameMoves(g);
+    if(!moves || !moves.length){
       alert('這筆東萍棋譜尚未完成可播放解析。'); return;
     }
-    currentIndex=0;
+    if(recording) stopRecording();
+    recording = false;
+    recordedMoves = [];
+    currentMoves = moves;
+    currentIndex = 0;
+    flipBoard = false;
     const title=document.getElementById('boardTitle'); if(title)title.textContent=(g.red||'紅方')+' '+(g.result||'')+' '+(g.black||'黑方');
     const desc=document.getElementById('descBox'); if(desc)desc.innerHTML='<b>東萍完整棋譜</b><br>'+(g.event||'')+'<br>開局：'+(g.opening||'未分類')+'<br>來源：'+(g.detailUrl?'<a href="'+g.detailUrl.replace(/"/g,'&quot;')+'" target="_blank">東萍原始棋譜頁</a>':'東萍公開索引');
     renderMovesList(); renderBoard();
     const q=new URLSearchParams(location.search); q.delete('gameId'); history.replaceState({},'',location.pathname+(q.toString()?'?'+q.toString():''));
     analyzePosition();
+    toast('✔ 已載入東萍棋譜：' + (g.red||'紅方') + ' 對 ' + (g.black||'黑方') + '（共 ' + currentMoves.length + ' 步），請按【下一手】開始播放');
   }catch(e){console.warn('後端棋譜載入失敗',e);}
 }
 
