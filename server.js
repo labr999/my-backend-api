@@ -685,6 +685,30 @@ app.post('/api/games', (q, s) => {
   s.status(r.duplicate ? 200 : 201).json({ ok: true, duplicate: r.duplicate, game: sanitizeGame(r.game) });
 });
 
+app.post('/api/import-history', (q, s) => {
+  const incoming = Array.isArray(q.body?.games) ? q.body.games : [];
+  let added = 0, updated = 0;
+  for (const g of incoming) {
+    const tokens = Array.isArray(g.tokens) ? g.tokens : (Array.isArray(g.moves) ? g.moves.map(m => typeof m === 'string' ? m : m.notation).filter(Boolean) : []);
+    const r = addGame({
+      red: g.red || (g.side === '先手' ? g.name : '未知紅方') || '未知紅方',
+      black: g.black || (g.side === '後手' ? g.name : '未知黑方') || '未知黑方',
+      tokens,
+      moves: g.exactMoves || tokens,
+      exactMoves: g.exactMoves || null,
+      opening: g.cat || g.opening || '未分類',
+      source: g.meta?.master ? 'master-sync' : 'history-import',
+      event: g.name || g.event || '歷史棋譜',
+      date: g.date || new Date().toISOString().slice(0, 10),
+      result: g.result || g.meta?.result || ''
+    });
+    if (r.duplicate) updated++;
+    else added++;
+  }
+  save();
+  s.json({ ok: true, added, updated, stats: { games: db.games.length, players: db.players.length } });
+});
+
 app.patch('/api/games/:id', (q, s) => {
   const g = db.games.find(x => String(x.id) === String(q.params.id));
   if (!g) return s.status(404).json({ error: '找不到棋譜' });
