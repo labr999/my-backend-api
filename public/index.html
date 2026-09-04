@@ -4027,8 +4027,6 @@ document.addEventListener('click',function(e){const a=e.target.closest?e.target.
 // 啟動畫面
 setTimeout(()=>document.getElementById('splash')?.classList.add('hidden'),700);
 
-</script>
-
 // V2.2/V2.9.6：雙向同步後端資料庫：上傳本機已儲存棋譜，並將後端棋譜全量分類至開局樹狀圖
 document.getElementById('syncBackendHistory')?.addEventListener('click', async ()=>{
   const btn = document.getElementById('syncBackendHistory');
@@ -4089,6 +4087,7 @@ document.getElementById('syncBackendHistory')?.addEventListener('click', async (
     }
   }
 });
+</script>
 
 <script>
 if('serviceWorker' in navigator){
