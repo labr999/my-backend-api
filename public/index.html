@@ -3361,6 +3361,60 @@ document.getElementById('btnBatchImport')?.addEventListener('click', () => {
     gotoTab('home');
   }
 });
+function renderSavedList(){
+  const box=document.getElementById('savedList');
+  const cnt=document.getElementById('savedCount');
+  if(!box) return;
+  if(cnt) cnt.textContent='（共 '+(importedGames.length||0)+' 局）';
+  const info=document.getElementById('storageInfo');
+  if(info){
+    const engine=__idbReady?'IndexedDB 離線棋庫':'localStorage';
+    info.textContent='儲存：'+engine+'　目前 '+(importedGames.length||0)+' 盤'+(__idbReady?'（可存上萬盤）':'（建議部署後使用以啟用大容量）');
+  }
+  if(!importedGames || importedGames.length===0){
+    box.innerHTML='<span class="sr-empty" style="padding:16px;display:block;text-align:center;color:var(--on-surface-variant);font-size:.82rem">尚無匯入或儲存的棋譜。用「先手/後手記譜」記錄後按儲存，或用下方匯入功能加入。</span>';
+    return;
+  }
+  box.innerHTML='';
+  importedGames.forEach((g,i)=>{
+    const d=document.createElement('div');
+    d.className='line-item';
+    d.style.cssText='padding:10px 12px;margin-bottom:8px;border-left:3px solid var(--accent);background:var(--surface-variant);border-radius:10px;display:flex;justify-content:space-between;align-items:center;gap:8px';
+    const infoDiv = document.createElement('div');
+    infoDiv.style.cssText='flex:1;cursor:pointer';
+    infoDiv.innerHTML=`<div class="ln" style="font-weight:700;font-size:.86rem;color:var(--on-surface)">${g.name}</div><div class="ld" style="font-size:.74rem;color:var(--on-surface-variant);margin-top:2px">${g.side}｜${g.cat}　${(g.tokens||[]).length} 步</div>`;
+    infoDiv.addEventListener('click',()=>{
+      const entry=DATA[g.side] && DATA[g.side][g.cat];
+      const idx=entry?entry.lines.findIndex(l=>l.name===g.name):-1;
+      if(idx>=0){ loadLine(g.side,g.cat,idx); gotoTab('home'); }
+    });
+    const del=document.createElement('button');
+    del.textContent='刪除';
+    del.style.cssText='padding:6px 12px;border:none;border-radius:8px;background:rgba(211,47,47,0.12);color:var(--danger);font-size:.76rem;font-weight:600;cursor:pointer;white-space:nowrap';
+    del.addEventListener('click',(ev)=>{ev.stopPropagation();deleteSavedGame(i);});
+    d.appendChild(infoDiv);
+    d.appendChild(del);
+    box.appendChild(d);
+  });
+}
+
+function deleteSavedGame(i){
+  const g=importedGames[i];
+  if(!g) return;
+  const entry=DATA[g.side] && DATA[g.side][g.cat];
+  if(entry){
+    const idx=entry.lines.findIndex(l=>l.name===g.name);
+    if(idx>=0) entry.lines.splice(idx,1);
+  }
+  importedGames.splice(i,1);
+  persistImports();
+  refreshImportCats();
+  buildCatGrid();
+  buildOpeningTree();
+  renderSavedList();
+  toast('已刪除棋譜');
+}
+
 document.getElementById('btnClearAll').addEventListener('click',()=>{
   if(!importedGames.length){toast('目前沒有已儲存棋譜');return;}
   if(!confirm('確定清空全部 '+importedGames.length+' 盤已儲存棋譜？此動作無法復原。'))return;
@@ -3975,24 +4029,66 @@ setTimeout(()=>document.getElementById('splash')?.classList.add('hidden'),700);
 
 </script>
 
-<script>
-// V2.2/V2.9.6：將後端棋譜庫全面自動分類並同步至開局樹狀圖
+// V2.2/V2.9.6：雙向同步後端資料庫：上傳本機已儲存棋譜，並將後端棋譜全量分類至開局樹狀圖
 document.getElementById('syncBackendHistory')?.addEventListener('click', async ()=>{
-  const btn=document.getElementById('syncBackendHistory'); btn.disabled=true; btn.textContent='⏳ 同步中…';
-  try{
-    const r=await fetch('/api/games?limit=1000'); const d=await r.json();
+  const btn = document.getElementById('syncBackendHistory');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ 正在雙向同步…';
+  }
+  try {
+    // 1. 若本機有記譜或匯入棋譜，自動備份上傳至後端資料庫
+    let uploaded = 0;
+    if (Array.isArray(importedGames) && importedGames.length > 0) {
+      for (const g of importedGames) {
+        if (g.__syncedToDb) continue;
+        try {
+          const postRes = await fetch('/api/games', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              red: g.meta?.red || (g.side === '先手' ? g.name : '未知紅方'),
+              black: g.meta?.black || (g.side === '後手' ? g.name : '未知黑方'),
+              tokens: g.tokens,
+              moves: g.exactMoves || g.tokens,
+              exactMoves: g.exactMoves || null,
+              opening: g.cat,
+              source: g.meta?.master ? 'master-sync' : 'local-record',
+              event: g.name,
+              result: g.meta?.result || '',
+              date: new Date().toISOString().slice(0, 10)
+            })
+          });
+          if (postRes.ok) {
+            g.__syncedToDb = true;
+            uploaded++;
+          }
+        } catch(postErr) {}
+      }
+    }
+
+    // 2. 從後端資料庫拉取所有棋譜並分類至開局樹狀圖
+    const r = await fetch('/api/games?limit=1000');
+    if (!r.ok) throw new Error('後端伺服器回應 HTTP ' + r.status);
+    const d = await r.json();
     const items = d.items || [];
     syncMasterGamesToOpeningTree(items);
     refreshImportCats();
     refreshImportCategoryOptions();
     buildCatGrid();
     buildOpeningTree();
-    if(document.getElementById('savedList')) renderSavedList();
-    toast(`✔ 後端棋譜庫同步完成：已將 ${items.length} 盤棋譜分類至開局樹狀圖！`);
-  }catch(e){toast('同步失敗：'+e.message)}
-  btn.disabled=false; btn.textContent='☁ 同步後端棋庫';
+    if (typeof renderSavedList === 'function') renderSavedList();
+    toast(`✔ 資料庫同步成功！${uploaded > 0 ? `已上傳 ${uploaded} 盤至後端，` : ''}已將後端 ${items.length} 盤棋譜分類至開局樹！`);
+  } catch(e) {
+    console.error('同步失敗:', e);
+    toast('同步失敗：' + (e.message || e));
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '☁ 同步後端棋庫';
+    }
+  }
 });
-</script>
 
 <script>
 if('serviceWorker' in navigator){
