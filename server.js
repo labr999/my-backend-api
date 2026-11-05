@@ -58,7 +58,68 @@ const PORT = Number(process.env.PORT || 3000);
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 function readJson(f, d) { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } }
-function save() { const t = DB_FILE + '.tmp'; fs.writeFileSync(t, JSON.stringify(db, null, 2), 'utf8'); fs.renameSync(t, DB_FILE); }
+// ---- 永久儲存：有 DATABASE_URL（Neon Postgres）就把整個資料庫存一份到雲端，否則只用本機 JSON ----
+// Render 免費方案的檔案會在睡眠／重啟／部署後重置，所以要靠外部資料庫保存。
+let pgPool = null, pgReady = false, pgTimer = null, pgDirty = false, pgSaving = false, pgLastSave = null, pgError = '';
+if (process.env.DATABASE_URL) {
+  try {
+    const { Pool } = require('pg');
+    pgPool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 2, idleTimeoutMillis: 30000 });
+    pgPool.on('error', e => { pgError = e.message; console.error('[pg] pool error', e.message); });
+  } catch (e) { pgError = e.message; console.error('[pg] 無法載入 pg 套件', e.message); }
+}
+async function flushPg() {
+  pgTimer = null;
+  if (!pgPool || !pgReady) return;
+  if (pgSaving) { pgTimer = setTimeout(flushPg, 1500); return; }
+  pgSaving = true; pgDirty = false;
+  try {
+    await pgPool.query(
+      'INSERT INTO xq_store (id, data, updated_at) VALUES ($1, $2, now()) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()',
+      ['db', JSON.stringify(db)]);
+    pgLastSave = new Date().toISOString(); pgError = '';
+  } catch (e) {
+    pgDirty = true; pgError = e.message; console.error('[pg] 儲存失敗', e.message);
+  } finally {
+    pgSaving = false;
+    if (pgDirty && !pgTimer) pgTimer = setTimeout(flushPg, 5000);
+  }
+}
+async function loadPg() {
+  if (!pgPool) return;
+  try {
+    await pgPool.query('CREATE TABLE IF NOT EXISTS xq_store (id text PRIMARY KEY, data text NOT NULL, updated_at timestamptz DEFAULT now())');
+    const r = await pgPool.query('SELECT data FROM xq_store WHERE id = $1', ['db']);
+    if (r.rows.length) {
+      const d = JSON.parse(r.rows[0].data);
+      db.players = Array.isArray(d.players) ? d.players : [];
+      db.games = Array.isArray(d.games) ? d.games : [];
+      db.nextGameId = Number(d.nextGameId) || (db.games.reduce((m, g) => Math.max(m, Number(g.id) || 0), 0) + 1);
+      for (const mp of MASTER_PLAYERS) if (!db.players.some(p => p.name === mp.name)) db.players.push({ ...mp });
+      console.log(`[pg] 已從雲端資料庫載入 ${db.games.length} 盤、${db.players.length} 位棋手`);
+      pgReady = true;
+      saveFile();
+    } else {
+      pgReady = true;
+      console.log(`[pg] 雲端資料庫是空的，用本機 ${db.games.length} 盤當初始資料寫入`);
+      await flushPg();
+    }
+  } catch (e) {
+    pgError = e.message;
+    console.error('[pg] 連不上雲端資料庫，這次只用本機 JSON（不會覆蓋雲端）：', e.message);
+  }
+}
+function saveFile() { const t = DB_FILE + '.tmp'; fs.writeFileSync(t, JSON.stringify(db, null, 2), 'utf8'); fs.renameSync(t, DB_FILE); }
+function save() {
+  saveFile();
+  if (pgPool && pgReady) { pgDirty = true; if (!pgTimer) pgTimer = setTimeout(flushPg, 1500); }
+}
+async function shutdown(sig) {
+  try { if (pgTimer) { clearTimeout(pgTimer); } if (pgDirty) await flushPg(); } catch {}
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 let db = readJson(DB_FILE, { players: [], games: [], nextGameId: 1 });
 if (!Array.isArray(db.players)) db.players = [];
@@ -594,7 +655,7 @@ async function importOne(url) {
   throw new Error('已開啟東萍頁面，但沒有找到 DhtmlXQ / WXF 棋譜資料');
 }
 
-app.get('/api/health', (q, s) => s.json({ ok: true, service: 'xiangqi-web-suite', version: APP_VERSION, displayVersion: DISPLAY_VERSION, storage: 'json', maxPages: MAX_PLAYER_PAGES, maxGames: MAX_PLAYER_GAMES, time: new Date().toISOString() }));
+app.get('/api/health', (q, s) => s.json({ ok: true, service: 'xiangqi-web-suite', version: APP_VERSION, displayVersion: DISPLAY_VERSION, storage: pgReady ? 'postgres' : 'json', pgLastSave, pgError: pgError || undefined, games: db.games.length, maxPages: MAX_PLAYER_PAGES, maxGames: MAX_PLAYER_GAMES, time: new Date().toISOString() }));
 app.get('/api/stats', (q, s) => s.json({ players: db.players.length, games: db.games.length, playableGames: db.games.filter(g => g.exactMoves?.length || g.moves?.length).length }));
 
 app.get('/api/players', (q, s) => {
@@ -1033,5 +1094,5 @@ app.get('/api/opening/classify', (q, s) => s.json({ opening: classifyOpening(Str
 // Express 5：SPA fallback
 app.use((req, res) => res.sendFile(path.join(ROOT, 'public', 'index.html')));
 
-server.listen(PORT, '0.0.0.0', () => console.log(`xiangqi-web-suite ${DISPLAY_VERSION} listening on ${PORT}`));
+loadPg().finally(() => server.listen(PORT, '0.0.0.0', () => console.log(`xiangqi-web-suite ${DISPLAY_VERSION} listening on ${PORT}（儲存：${pgReady ? 'Neon Postgres' : '本機 JSON'}）`)));
 
