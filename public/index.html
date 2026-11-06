@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#8B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="象棋開局">
-<title>象棋小棋聖 V2.9.9 ｜ 象棋開局譜</title>
+<title>象棋小棋聖 V2.9.10 ｜ 象棋開局譜</title>
 <style>
 
 :root{
@@ -54,7 +54,7 @@ body{font-family:'Noto Sans TC','Microsoft JhengHei','PingFang TC',sans-serif;ba
 @media (min-width: 920px){
   .home-layout{grid-template-columns:minmax(400px, 470px) 1fr;gap:20px;align-items:start}
   .home-left-col{position:sticky;top:116px;max-height:calc(100vh - 116px - 84px);overflow-y:auto;overscroll-behavior:contain}
-  /* V2.9.9：標題列按鈕換到第二行，避免副標題被擠成直排；棋盤縮到可同時看到播放按鈕 */
+  /* V2.9.10：標題列按鈕換到第二行，避免副標題被擠成直排；棋盤縮到可同時看到播放按鈕 */
   #mainBoardCard .board-header{flex-wrap:wrap}
   #mainBoardCard .board-title-group{flex:1 1 100%}
   #mainBoardCard .board-header-badges{flex-wrap:wrap}
@@ -229,7 +229,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
 .hidden{display:none !important}
 
-/* ===== V2.9.9 我的清單 ===== */
+/* ===== V2.9.10 我的清單 ===== */
 #myListCard{display:none}
 #myListCard.open{display:block}
 .ml-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
@@ -245,7 +245,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 .ml-video .ml-vbar{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:.8rem;color:var(--on-surface-variant);flex-wrap:wrap}
 .ml-video .ml-vbar b{color:var(--on-surface)}
 .ml-list{max-height:420px;overflow-y:auto;border:1px solid var(--outline-variant);border-radius:12px}
-.ml-row{display:grid;grid-template-columns:42px 1fr auto auto;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--outline-variant);font-size:.85rem}
+.ml-row{display:grid;grid-template-columns:58px 1fr auto auto;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--outline-variant);font-size:.85rem}
 .ml-row:last-child{border-bottom:none}
 .ml-row .ml-no{color:var(--on-surface-variant);font-variant-numeric:tabular-nums}
 .ml-row .ml-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -266,6 +266,12 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 .ml-row .ml-sub{display:block;font-size:.74rem;color:var(--on-surface-variant);overflow:hidden;text-overflow:ellipsis}
 .ml-tag{max-width:120px;padding:3px 4px;border-radius:8px;border:1px solid var(--outline-variant);font:inherit;font-size:.75rem;background:var(--surface);color:var(--on-surface-variant)}
 .ml-tag.set{border-color:var(--accent,#c9a227);color:var(--on-surface);font-weight:700}
+.ml-qbar{display:none;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px;font-size:.82rem;color:var(--on-surface-variant)}
+.ml-qbar.show{display:flex}
+.ml-qbar #mlQn{font-weight:700;color:var(--on-surface)}
+.ml-qhint{font-size:.74rem}
+.ml-no input{margin:0 3px 0 0;vertical-align:middle;cursor:pointer}
+.ml-row.queued{background:color-mix(in srgb,var(--primary) 8%,transparent)}
 .ml-more{display:block;width:100%;padding:10px;border:none;background:none;color:var(--primary);font:inherit;font-weight:700;cursor:pointer}
 #xqSiteNav button.on{background:var(--primary);color:var(--on-primary)}
 </style>
@@ -276,7 +282,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 <meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
-<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.9</span> <span id="xq-version-status">●</span></div>
+<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.10</span> <span id="xq-version-status">●</span></div>
 <script>
 (async()=>{try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();const el=document.getElementById('xq-version-status');if(el)el.textContent=d.ok?'● V'+d.version:'● OFFLINE';}catch(e){}})();
 </script>
@@ -400,13 +406,13 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 
       <!-- 右欄：著法記錄區、當前局勢分析、開局分類與說明 -->
       <div class="home-right-col">
-        <!-- 0. 我的清單（V2.9.9）：影片覆盤上傳的播放清單 -->
+        <!-- 0. 我的清單（V2.9.10）：影片覆盤上傳的播放清單 -->
         <div class="card" id="myListCard">
           <div class="ml-head">
             <h3 style="margin:0">📺 我的清單</h3>
             <select id="mlSelect" onchange="mlLoad(this.value)"><option value="">載入中…</option></select>
             <span class="ml-filter" id="mlFilter">
-              <button type="button" class="on" data-f="all">全部</button><button type="button" data-f="done">已覆盤</button><button type="button" data-f="todo">未覆盤</button>
+              <button type="button" class="on" data-f="all">全部</button><button type="button" data-f="done">已覆盤</button><button type="button" data-f="todo">未覆盤</button><button type="button" data-f="queued">待辨識</button>
             </span>
             <span class="ml-count" id="mlCount"></span>
           </div>
@@ -416,6 +422,12 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
               <option value="list">目前清單</option><option value="channel">我的頻道</option><option value="all">全 YouTube</option><option value="tags">已標記開局</option>
             </select>
             <button type="button" class="ml-g" onclick="mlSearch()">🔍 搜尋</button>
+          </div>
+          <div class="ml-qbar" id="mlQbar">
+            <span id="mlQn">待辨識 0 支</span>
+            <button type="button" class="ml-g" onclick="mlQueueAll(true)" title="把目前列表（依篩選與搜尋）全部勾選">☑ 目前列表全選</button>
+            <button type="button" class="ml-g" onclick="mlQueueAll(false)">清空勾選</button>
+            <span class="ml-qhint">勾好後在電腦執行影片覆盤，選「Q」就只辨識勾選的影片</span>
           </div>
           <div class="ml-video" id="mlVideo">
             <div class="ml-frame" id="mlFrame"></div>
@@ -672,7 +684,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
     </div>
     <div class="card">
       <h3>ℹ️ 關於</h3>
-      <div class="desc-text" style="padding-top:0">象棋小棋聖 V2.9.9：整合吾愛象棋教學播放清單、開局定式棋譜（前12步為定式主線、13步起為內建引擎推演）、先後手記譜、Pikafish/雲庫即時分析、AI最佳下一步推薦、語音評估優劣勢、開局分類樹狀圖、自訂與手動更改開局分類、YouTube影音連結與東萍大師棋譜同步庫。</div>
+      <div class="desc-text" style="padding-top:0">象棋小棋聖 V2.9.10：整合吾愛象棋教學播放清單、開局定式棋譜（前12步為定式主線、13步起為內建引擎推演）、先後手記譜、Pikafish/雲庫即時分析、AI最佳下一步推薦、語音評估優劣勢、開局分類樹狀圖、自訂與手動更改開局分類、YouTube影音連結與東萍大師棋譜同步庫。</div>
     </div>
   </section>
 
@@ -2454,7 +2466,7 @@ function renderMovesList(){
       wrap.appendChild(c);
     });
     if(wrap.id==='homeMoves'){
-      // V2.9.9：只在棋譜清單自身範圍內捲動，不帶動整頁，按下一手時棋盤與按鈕維持原位
+      // V2.9.10：只在棋譜清單自身範圍內捲動，不帶動整頁，按下一手時棋盤與按鈕維持原位
       const activeEl=wrap.querySelector('.move-chip.active');
       const box=wrap.closest('.moves-scroll-box')||wrap;
       if(activeEl && box.scrollHeight>box.clientHeight+2){
@@ -4206,7 +4218,7 @@ document.addEventListener('click',function(e){const a=e.target.closest?e.target.
 // 啟動畫面
 setTimeout(()=>document.getElementById('splash')?.classList.add('hidden'),700);
 
-// V2.2/V2.9.9：雙向同步後端資料庫：上傳本機已儲存棋譜，並將後端棋譜全量分類至開局樹狀圖
+// V2.2/V2.9.10：雙向同步後端資料庫：上傳本機已儲存棋譜，並將後端棋譜全量分類至開局樹狀圖
 document.getElementById('syncBackendHistory')?.addEventListener('click', async ()=>{
   const btn = document.getElementById('syncBackendHistory');
   if (btn) {
@@ -4304,8 +4316,8 @@ if('serviceWorker' in navigator){
 </script>
 
 <script>
-/* ===== V2.9.9 我的清單：影片清單 → 載入覆盤棋譜 → 嵌入影片並依步數跳秒
-   V2.9.9：整合 xiang-video-search：清單內搜尋、搜我的頻道／全 YouTube、手動標記開局 ===== */
+/* ===== V2.9.10 我的清單：影片清單 → 載入覆盤棋譜 → 嵌入影片並依步數跳秒
+   V2.9.10：整合 xiang-video-search：清單內搜尋、搜我的頻道／全 YouTube、手動標記開局 ===== */
 const ML = { lists: [], cur: null, data: null, filter: 'all', yt: null, loaded: false, openings: null, view: null };
 function mlEsc(t){return String(t==null?'':t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 const ML_STATUS = { no_start:'找不到開局', too_short:'步數太少', engine_error:'引擎錯誤', error:'錯誤', ok:'已覆盤（擺局段落或未上傳）' };
@@ -4356,8 +4368,9 @@ function mlRowHtml(it, no){
   const st = (it.games&&it.games.length) ? '' : `<span class="ml-st">${mlEsc(it.status ? (ML_STATUS[String(it.status).split(':')[0]]||it.status) : (it.channel!=null?'未覆盤':'未覆盤'))}</span>`;
   const click = (it.games&&it.games.length) ? `mlPlay('${mlEsc(it.videoId)}',${Number(it.games[0].id)})` : `mlWatch('${mlEsc(it.videoId)}')`;
   const sub = [it.channel, it.published, it.tag?('🏷 '+it.tag.side+'・'+it.tag.opening):'', (it.games&&it.games[0]&&it.games[0].opening)?('♟ '+it.games[0].opening):''].filter(Boolean).join('　');
-  return `<div class="ml-row done ${ML.yt&&ML.yt.videoId===it.videoId?'cur':''}" onclick="${click}" data-vid="${mlEsc(it.videoId)}">
-    <span class="ml-no">${no}</span>
+  const chk = ML.view==='list' ? `<input type="checkbox" title="排入辨識" ${it.queued?'checked':''} onclick="event.stopPropagation();mlQueue('${mlEsc(it.videoId)}',this.checked)">` : '';
+  return `<div class="ml-row done ${it.queued&&ML.view==='list'?'queued':''} ${ML.yt&&ML.yt.videoId===it.videoId?'cur':''}" onclick="${click}" data-vid="${mlEsc(it.videoId)}">
+    <span class="ml-no">${chk}${no}</span>
     <span class="ml-title"><a href="https://www.youtube.com/watch?v=${encodeURIComponent(it.videoId)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="${mlEsc(it.title)}">${mlEsc(it.title)}</a>${sub?`<span class="ml-sub">${mlEsc(sub)}</span>`:''}</span>
     <span class="ml-games">${games||st}</span>${mlTagSelect(it)}</div>`;
 }
@@ -4367,14 +4380,40 @@ function mlRender(){
   if(ML.view==='yt' || ML.view==='tags'){ return mlRenderSearch(); }
   const d=ML.data; if(!d) return;
   const q=document.getElementById('mlQ').value.trim();
-  const items=(d.items||[]).filter(it=> (ML.filter==='all' || (ML.filter==='done' ? it.games.length : !it.games.length)) && mlMatch(it,q));
+  const items=mlListItems();
+  mlQbar();
   document.getElementById('mlCount').textContent=`已覆盤 ${d.reviewed} / ${d.total} 支`+(q?`，符合 ${items.length} 支`:'');
   if(!items.length){ box.innerHTML='<div class="ml-empty">沒有符合的影片</div>'; return; }
   box.innerHTML=items.map(it=>mlRowHtml(it,it.index)).join('');
 }
+function mlPass(it){ const n=(it.games||[]).length; return ML.filter==='all' || (ML.filter==='done'?n:(ML.filter==='queued'?it.queued:!n)); }
+function mlListItems(){ const q=document.getElementById('mlQ').value.trim(); return ((ML.data&&ML.data.items)||[]).filter(it=>mlPass(it)&&mlMatch(it,q)); }
+function mlQbar(){
+  const bar=document.getElementById('mlQbar'); bar.classList.toggle('show', ML.view==='list' && !!ML.data);
+  if(ML.data) document.getElementById('mlQn').textContent='待辨識 '+ML.data.items.filter(x=>x.queued).length+' 支';
+}
+async function mlQueuePost(ids,on){
+  const r=await fetch('/api/playlists/'+encodeURIComponent(ML.cur)+'/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({videoIds:ids,on})});
+  const d=await r.json(); if(!r.ok) throw new Error(d.error||r.status);
+  const set=new Set(ids); ML.data.items.forEach(it=>{ if(set.has(it.videoId)) it.queued=on; });
+  return d;
+}
+async function mlQueue(videoId,on){
+  try{ await mlQueuePost([videoId],on); const row=document.querySelector('.ml-row[data-vid="'+videoId+'"]'); if(row) row.classList.toggle('queued',on); mlQbar(); }
+  catch(e){ toast('勾選失敗：'+e.message); mlRender(); }
+}
+async function mlQueueAll(on){
+  if(!ML.data) return;
+  const ids = on ? mlListItems().map(x=>x.videoId) : ML.data.items.filter(x=>x.queued).map(x=>x.videoId);
+  if(!ids.length){ toast(on?'目前列表沒有影片':'沒有勾選的影片'); return; }
+  if(!on && !confirm('清空這個清單全部 '+ids.length+' 支勾選？')) return;
+  try{ await mlQueuePost(ids,on); toast((on?'已勾選 ':'已取消 ')+ids.length+' 支'); mlRender(); }
+  catch(e){ toast('失敗：'+e.message); }
+}
 function mlRenderSearch(){
+  document.getElementById('mlQbar').classList.remove('show');
   const box=document.getElementById('mlList'), r=ML.search; if(!r) return;
-  let items=r.items.filter(it=> ML.filter==='all' || (ML.filter==='done' ? (it.games||[]).length : !(it.games||[]).length));
+  let items=r.items.filter(it=> ML.filter==='queued' ? false : mlPass(it));
   if(ML.view==='tags'){ const q=document.getElementById('mlQ').value.trim(); items=items.filter(it=>mlMatch(it,q)); }
   document.getElementById('mlCount').textContent = ML.view==='tags' ? `已標記 ${r.items.length} 支` : `搜尋到 ${r.items.length} 支`;
   box.innerHTML = items.length ? items.map((it,k)=>mlRowHtml(it,k+1)).join('') : '<div class="ml-empty">沒有符合的影片</div>';

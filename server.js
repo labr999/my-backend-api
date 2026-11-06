@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.9';
-const DISPLAY_VERSION = 'V2.9.9';
+const APP_VERSION = '2.9.10';
+const DISPLAY_VERSION = 'V2.9.10';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -764,7 +764,7 @@ function videoGamesIndex() {
 }
 function plSummary(pl, idx) {
   const items = pl.items || [];
-  return { id: pl.id, title: pl.title, url: pl.url, updated_at: pl.updated_at, total: items.length, reviewed: items.filter(it => idx[it.videoId]).length };
+  return { id: pl.id, title: pl.title, url: pl.url, updated_at: pl.updated_at, total: items.length, reviewed: items.filter(it => idx[it.videoId]).length, queued: items.filter(it => it.queued).length };
 }
 app.get('/api/playlists', (q, s) => {
   const idx = videoGamesIndex();
@@ -785,7 +785,7 @@ app.post('/api/playlists', (q, s) => {
   const items = b.items.filter(it => it && it.videoId).slice(0, 2000).map((it, i) => ({
     videoId: String(it.videoId).slice(0, 32), title: String(it.title || it.videoId).slice(0, 200), index: i + 1,
     status: it.status != null ? String(it.status).slice(0, 40) : ((old[it.videoId] && old[it.videoId].status) || ''),
-    note: (old[it.videoId] && old[it.videoId].note) || '', time: it.time ? String(it.time).slice(0, 40) : ((old[it.videoId] && old[it.videoId].time) || '')
+    note: (old[it.videoId] && old[it.videoId].note) || '', queued: !!(old[it.videoId] && old[it.videoId].queued), time: it.time ? String(it.time).slice(0, 40) : ((old[it.videoId] && old[it.videoId].time) || '')
   }));
   const rec = { id, title: String(b.title || id).slice(0, 120), url: String(b.url || '').slice(0, 300), items, updated_at: new Date().toISOString() };
   if (pl) Object.assign(pl, rec); else db.playlists.push(rec);
@@ -799,9 +799,29 @@ app.post('/api/playlists/:id/status', (q, s) => {
   const it = (pl.items || []).find(x => x.videoId === String(b.videoId || ''));
   if (!it) return s.status(404).json({ error: '清單裡沒有這支影片' });
   it.status = String(b.status || '').slice(0, 40); it.note = String(b.note || '').slice(0, 200); it.time = new Date().toISOString();
+  // V2.9.10：辨識完成（含找不到開局、步數太少）就移出待辨識；下載失敗、引擎錯誤留著下次再跑
+  if (it.queued && !/^(error|engine_error)/.test(it.status)) it.queued = false;
   pl.updated_at = it.time;
   save();
   s.json({ ok: true });
+});
+/* V2.9.10：在小棋聖勾選要辨識的影片，影片覆盤 --queue 依序處理 */
+app.post('/api/playlists/:id/queue', (q, s) => {
+  const pl = db.playlists.find(x => x.id === q.params.id);
+  if (!pl) return s.status(404).json({ error: '找不到清單' });
+  const b = q.body || {};
+  const ids = new Set((Array.isArray(b.videoIds) ? b.videoIds : [b.videoId]).map(String));
+  const on = b.on !== false;
+  let n = 0;
+  for (const it of pl.items || []) if (ids.has(it.videoId) || b.all === true) { if (!!it.queued !== on) n++; it.queued = on; }
+  if (n) save();
+  s.json({ ok: true, changed: n, queued: (pl.items || []).filter(x => x.queued).length });
+});
+app.get('/api/queue', (q, s) => {
+  const out = [];
+  for (const pl of db.playlists) for (const it of pl.items || []) if (it.queued)
+    out.push({ playlistId: pl.id, playlistTitle: pl.title, videoId: it.videoId, title: it.title, index: it.index, status: it.status || '' });
+  s.json({ items: out });
 });
 app.delete('/api/playlists/:id', (q, s) => {
   const n = db.playlists.length;
