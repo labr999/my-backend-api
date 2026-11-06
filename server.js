@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.10';
-const DISPLAY_VERSION = 'V2.9.10';
+const APP_VERSION = '2.9.11';
+const DISPLAY_VERSION = 'V2.9.11';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -776,21 +776,61 @@ app.get('/api/playlists/:id', (q, s) => {
   const idx = videoGamesIndex();
   s.json({ ...plSummary(pl, idx), items: (pl.items || []).map(it => ({ ...it, games: idx[it.videoId] || [], tag: db.videoTags[it.videoId] || null })) });
 });
-app.post('/api/playlists', (q, s) => {
-  const b = q.body || {};
+function upsertPlaylist(b) {
   const id = String(b.id || '').trim().slice(0, 80);
-  if (!id || !Array.isArray(b.items)) return s.status(400).json({ error: '需要 id 與 items' });
+  if (!id || !Array.isArray(b.items)) throw Object.assign(new Error('需要 id 與 items'), { code: 400 });
   let pl = db.playlists.find(x => x.id === id);
   const old = {}; if (pl) for (const it of pl.items || []) old[it.videoId] = it;
   const items = b.items.filter(it => it && it.videoId).slice(0, 2000).map((it, i) => ({
     videoId: String(it.videoId).slice(0, 32), title: String(it.title || it.videoId).slice(0, 200), index: i + 1,
     status: it.status != null ? String(it.status).slice(0, 40) : ((old[it.videoId] && old[it.videoId].status) || ''),
-    note: (old[it.videoId] && old[it.videoId].note) || '', queued: !!(old[it.videoId] && old[it.videoId].queued), time: it.time ? String(it.time).slice(0, 40) : ((old[it.videoId] && old[it.videoId].time) || '')
+    note: (old[it.videoId] && old[it.videoId].note) || '', queued: !!(old[it.videoId] && old[it.videoId].queued),
+    time: it.time ? String(it.time).slice(0, 40) : ((old[it.videoId] && old[it.videoId].time) || '')
   }));
   const rec = { id, title: String(b.title || id).slice(0, 120), url: String(b.url || '').slice(0, 300), items, updated_at: new Date().toISOString() };
   if (pl) Object.assign(pl, rec); else db.playlists.push(rec);
   save();
-  s.json({ ok: true, playlist: plSummary(rec, videoGamesIndex()) });
+  return plSummary(rec, videoGamesIndex());
+}
+app.post('/api/playlists', (q, s) => {
+  try { s.json({ ok: true, playlist: upsertPlaylist(q.body || {}) }); }
+  catch (e) { s.status(e.code || 500).json({ error: e.message }); }
+});
+/* V2.9.11：貼清單網址，用 YouTube Data API 直接同步（公開／不公開清單；私人清單讀不到） */
+async function ytGet(path, params) {
+  const u = new URL('https://www.googleapis.com/youtube/v3/' + path);
+  u.search = new URLSearchParams({ ...params, key: process.env.YOUTUBE_API_KEY }).toString();
+  const r = await fetch(u, { signal: AbortSignal.timeout(20000) });
+  const j = await r.json();
+  if (!r.ok) {
+    const reason = j?.error?.errors?.[0]?.reason || '';
+    const msg = reason === 'playlistNotFound' ? '讀不到這個清單：私人清單請到 YouTube 改成「不公開」或「公開」'
+      : reason === 'quotaExceeded' ? '今天的 YouTube 額度用完了，明天再試' : ('YouTube 回應錯誤：' + (j?.error?.message || r.status));
+    throw Object.assign(new Error(msg), { code: r.status === 404 ? 404 : 502 });
+  }
+  return j;
+}
+app.post('/api/playlists/import', async (q, s) => {
+  if (!process.env.YOUTUBE_API_KEY) return s.status(503).json({ error: '小棋聖尚未設定 YOUTUBE_API_KEY' });
+  const m = String((q.body || {}).url || '').match(/(?:[?&]list=|^)(PL[\w-]{10,}|[\w-]{16,})/);
+  if (!m) return s.status(400).json({ error: '請貼上含 list= 的播放清單網址' });
+  const lid = m[1];
+  try {
+    const meta = await ytGet('playlists', { part: 'snippet', id: lid });
+    if (!meta.items || !meta.items.length) throw Object.assign(new Error('讀不到這個清單：私人清單請到 YouTube 改成「不公開」或「公開」'), { code: 404 });
+    const title = meta.items[0].snippet?.title || lid;
+    const items = []; let pageToken = '';
+    for (let k = 0; k < 40; k++) {
+      const j = await ytGet('playlistItems', { part: 'snippet', playlistId: lid, maxResults: '50', ...(pageToken ? { pageToken } : {}) });
+      for (const x of j.items || []) {
+        const vid = x.snippet?.resourceId?.videoId; const t = x.snippet?.title || '';
+        if (vid && !items.some(y => y.videoId === vid) && t !== 'Private video' && t !== 'Deleted video') items.push({ videoId: vid, title: t });
+      }
+      pageToken = j.nextPageToken || ''; if (!pageToken) break;
+    }
+    const pl = upsertPlaylist({ id: lid, title, url: 'https://www.youtube.com/playlist?list=' + lid, items });
+    s.json({ ok: true, playlist: pl });
+  } catch (e) { s.status(e.code || 500).json({ error: e.message }); }
 });
 app.post('/api/playlists/:id/status', (q, s) => {
   const pl = db.playlists.find(x => x.id === q.params.id);
