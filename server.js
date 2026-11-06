@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.8';
-const DISPLAY_VERSION = 'V2.9.8';
+const APP_VERSION = '2.9.9';
+const DISPLAY_VERSION = 'V2.9.9';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -95,6 +95,7 @@ async function loadPg() {
       db.players = Array.isArray(d.players) ? d.players : [];
       db.games = Array.isArray(d.games) ? d.games : [];
       db.playlists = Array.isArray(d.playlists) ? d.playlists : (db.playlists || []);
+      db.videoTags = (d.videoTags && typeof d.videoTags === 'object') ? d.videoTags : (db.videoTags || {});
       db.nextGameId = Number(d.nextGameId) || (db.games.reduce((m, g) => Math.max(m, Number(g.id) || 0), 0) + 1);
       for (const mp of MASTER_PLAYERS) if (!db.players.some(p => p.name === mp.name)) db.players.push({ ...mp });
       console.log(`[pg] 已從雲端資料庫載入 ${db.games.length} 盤、${db.players.length} 位棋手`);
@@ -126,6 +127,7 @@ let db = readJson(DB_FILE, { players: [], games: [], nextGameId: 1 });
 if (!Array.isArray(db.players)) db.players = [];
 if (!Array.isArray(db.games)) db.games = [];
 if (!Array.isArray(db.playlists)) db.playlists = [];
+if (!db.videoTags || typeof db.videoTags !== 'object' || Array.isArray(db.videoTags)) db.videoTags = {};
 db.nextGameId = Number(db.nextGameId) || 1;
 for (const mp of MASTER_PLAYERS) {
   if (!db.players.some(p => p.name === mp.name)) db.players.push({ ...mp });
@@ -772,7 +774,7 @@ app.get('/api/playlists/:id', (q, s) => {
   const pl = db.playlists.find(x => x.id === q.params.id);
   if (!pl) return s.status(404).json({ error: '找不到清單' });
   const idx = videoGamesIndex();
-  s.json({ ...plSummary(pl, idx), items: (pl.items || []).map(it => ({ ...it, games: idx[it.videoId] || [] })) });
+  s.json({ ...plSummary(pl, idx), items: (pl.items || []).map(it => ({ ...it, games: idx[it.videoId] || [], tag: db.videoTags[it.videoId] || null })) });
 });
 app.post('/api/playlists', (q, s) => {
   const b = q.body || {};
@@ -806,6 +808,66 @@ app.delete('/api/playlists/:id', (q, s) => {
   db.playlists = db.playlists.filter(x => x.id !== q.params.id);
   if (db.playlists.length !== n) save();
   s.json({ ok: true, removed: n - db.playlists.length });
+});
+
+/* ===== V2.9.9：YouTube 搜尋（整合自 xiang-video-search）與手動開局標記 ===== */
+const VIDEO_OPENINGS = {
+  '先手': ['中炮起手', '順炮', '列炮', '屏風馬', '反宮馬', '仙人指路', '飛相局', '起馬局', '過宮炮', '士角炮'],
+  '後手': ['屏風馬應中炮', '反宮馬應中炮', '順炮應中炮', '列炮應中炮', '單提馬', '卒底炮', '後補列炮', '其他應法']
+};
+const ytCache = new Map();
+app.get('/api/yt/config', (q, s) => s.json({ apiKey: !!process.env.YOUTUBE_API_KEY, channel: !!process.env.CHANNEL_ID, openings: VIDEO_OPENINGS }));
+app.get('/api/yt/search', async (q, s) => {
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key) return s.status(503).json({ error: '小棋聖尚未設定 YOUTUBE_API_KEY（Render → Environment）' });
+  const term = String(q.query.q || '').trim().slice(0, 100);
+  const scope = q.query.scope === 'all' ? 'all' : 'channel';
+  const pageToken = String(q.query.pageToken || '').slice(0, 100);
+  if (!term) return s.status(400).json({ error: '請輸入關鍵字' });
+  if (scope === 'channel' && !process.env.CHANNEL_ID) return s.status(503).json({ error: '小棋聖尚未設定 CHANNEL_ID（Render → Environment）' });
+  const ck = scope + '|' + term + '|' + pageToken;
+  const hit = ytCache.get(ck);
+  const idx = videoGamesIndex();
+  const decorate = d => ({ ...d, items: d.items.map(it => ({ ...it, games: idx[it.videoId] || [], tag: db.videoTags[it.videoId] || null })) });
+  if (hit && Date.now() - hit.t < 3600e3) return s.json(decorate(hit.d));
+  const u = new URL('https://www.googleapis.com/youtube/v3/search');
+  u.search = new URLSearchParams({ part: 'snippet', type: 'video', maxResults: '25', q: term, key, ...(scope === 'channel' ? { channelId: process.env.CHANNEL_ID, order: 'date' } : {}), ...(pageToken ? { pageToken } : {}) }).toString();
+  try {
+    const r = await fetch(u, { signal: AbortSignal.timeout(20000) });
+    const j = await r.json();
+    if (!r.ok) {
+      const reason = j?.error?.errors?.[0]?.reason || '';
+      return s.status(r.status).json({ error: reason === 'quotaExceeded' ? '今天的 YouTube 搜尋額度用完了（每天約 100 次），明天再試' : ('YouTube 回應錯誤：' + (j?.error?.message || r.status)) });
+    }
+    const d = {
+      nextPageToken: j.nextPageToken || '', total: j.pageInfo?.totalResults || 0,
+      items: (j.items || []).filter(x => x.id?.videoId).map(x => ({
+        videoId: x.id.videoId, title: x.snippet?.title || '', channel: x.snippet?.channelTitle || '',
+        published: (x.snippet?.publishedAt || '').slice(0, 10), thumb: x.snippet?.thumbnails?.default?.url || ''
+      }))
+    };
+    ytCache.set(ck, { t: Date.now(), d });
+    if (ytCache.size > 300) ytCache.delete(ytCache.keys().next().value);
+    s.json(decorate(d));
+  } catch (e) {
+    s.status(502).json({ error: '連不上 YouTube：' + e.message });
+  }
+});
+app.get('/api/video-tags', (q, s) => {
+  const idx = videoGamesIndex();
+  const items = Object.entries(db.videoTags).map(([videoId, t]) => ({ videoId, ...t, games: idx[videoId] || [] }))
+    .sort((a, b) => String(b.time || '').localeCompare(String(a.time || '')));
+  s.json({ items, openings: VIDEO_OPENINGS });
+});
+app.post('/api/video-tags', (q, s) => {
+  const b = q.body || {};
+  const videoId = String(b.videoId || '').trim();
+  if (!/^[\w-]{6,20}$/.test(videoId)) return s.status(400).json({ error: 'videoId 不正確' });
+  const side = String(b.side || '').trim(), opening = String(b.opening || '').trim().slice(0, 40);
+  if (!opening) { delete db.videoTags[videoId]; save(); return s.json({ ok: true, removed: true }); }
+  db.videoTags[videoId] = { side: side === '後手' ? '後手' : '先手', opening, title: String(b.title || '').slice(0, 200), time: new Date().toISOString() };
+  save();
+  s.json({ ok: true, tag: db.videoTags[videoId] });
 });
 
 app.post('/api/import-history', (q, s) => {
