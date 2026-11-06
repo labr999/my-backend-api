@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.12';
-const DISPLAY_VERSION = 'V2.9.12';
+const APP_VERSION = '2.9.13';
+const DISPLAY_VERSION = 'V2.9.13';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -873,7 +873,8 @@ app.post('/api/playlists/:id/queue', (q, s) => {
   const ids = new Set((Array.isArray(b.videoIds) ? b.videoIds : [b.videoId]).map(String));
   const on = b.on !== false;
   let n = 0;
-  for (const it of pl.items || []) if (ids.has(it.videoId) || b.all === true) { if (!!it.queued !== on) n++; it.queued = on; }
+  const idx = (b.all === true && b.todoOnly && on) ? videoGamesIndex() : null;
+  for (const it of pl.items || []) if (ids.has(it.videoId) || (b.all === true && !(idx && idx[it.videoId]))) { if (!!it.queued !== on) n++; it.queued = on; }
   if (n) save();
   s.json({ ok: true, changed: n, queued: (pl.items || []).filter(x => x.queued).length });
 });
