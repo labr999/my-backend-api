@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#8B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="象棋開局">
-<title>象棋小棋聖 V2.9.6 ｜ 象棋開局譜</title>
+<title>象棋小棋聖 V2.9.7 ｜ 象棋開局譜</title>
 <style>
 
 :root{
@@ -53,7 +53,12 @@ body{font-family:'Noto Sans TC','Microsoft JhengHei','PingFang TC',sans-serif;ba
 .home-layout{display:grid;grid-template-columns:1fr;gap:16px}
 @media (min-width: 920px){
   .home-layout{grid-template-columns:minmax(400px, 470px) 1fr;gap:20px;align-items:start}
-  .home-left-col{position:sticky;top:116px}
+  .home-left-col{position:sticky;top:116px;max-height:calc(100vh - 116px - 84px);overflow-y:auto;overscroll-behavior:contain}
+  /* V2.9.7：標題列按鈕換到第二行，避免副標題被擠成直排；棋盤縮到可同時看到播放按鈕 */
+  #mainBoardCard .board-header{flex-wrap:wrap}
+  #mainBoardCard .board-title-group{flex:1 1 100%}
+  #mainBoardCard .board-header-badges{flex-wrap:wrap}
+  #mainBoardCard .board-wrap svg{max-height:calc(100vh - 116px - 84px - 250px);min-height:300px}
 }
 
 /* 棋盤標題獨立層次 (Board Card Header) */
@@ -232,7 +237,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 <meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
-<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.6</span> <span id="xq-version-status">●</span></div>
+<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.7</span> <span id="xq-version-status">●</span></div>
 <script>
 (async()=>{try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();const el=document.getElementById('xq-version-status');if(el)el.textContent=d.ok?'● V'+d.version:'● OFFLINE';}catch(e){}})();
 </script>
@@ -604,7 +609,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
     </div>
     <div class="card">
       <h3>ℹ️ 關於</h3>
-      <div class="desc-text" style="padding-top:0">象棋小棋聖 V2.9.6：整合吾愛象棋教學播放清單、開局定式棋譜（前12步為定式主線、13步起為內建引擎推演）、先後手記譜、Pikafish/雲庫即時分析、AI最佳下一步推薦、語音評估優劣勢、開局分類樹狀圖、自訂與手動更改開局分類、YouTube影音連結與東萍大師棋譜同步庫。</div>
+      <div class="desc-text" style="padding-top:0">象棋小棋聖 V2.9.7：整合吾愛象棋教學播放清單、開局定式棋譜（前12步為定式主線、13步起為內建引擎推演）、先後手記譜、Pikafish/雲庫即時分析、AI最佳下一步推薦、語音評估優劣勢、開局分類樹狀圖、自訂與手動更改開局分類、YouTube影音連結與東萍大師棋譜同步庫。</div>
     </div>
   </section>
 
@@ -2386,8 +2391,15 @@ function renderMovesList(){
       wrap.appendChild(c);
     });
     if(wrap.id==='homeMoves'){
+      // V2.9.7：只在棋譜清單自身範圍內捲動，不帶動整頁，按下一手時棋盤與按鈕維持原位
       const activeEl=wrap.querySelector('.move-chip.active');
-      if(activeEl)activeEl.scrollIntoView({block:'nearest',behavior:'smooth'});
+      const box=wrap.closest('.moves-scroll-box')||wrap;
+      if(activeEl && box.scrollHeight>box.clientHeight+2){
+        const br=box.getBoundingClientRect(), ar=activeEl.getBoundingClientRect();
+        if(ar.top<br.top||ar.bottom>br.bottom){
+          box.scrollTo({top:box.scrollTop+(ar.top-br.top)-box.clientHeight/2,behavior:'smooth'});
+        }
+      }
     }
   });
 }
@@ -4131,7 +4143,7 @@ document.addEventListener('click',function(e){const a=e.target.closest?e.target.
 // 啟動畫面
 setTimeout(()=>document.getElementById('splash')?.classList.add('hidden'),700);
 
-// V2.2/V2.9.6：雙向同步後端資料庫：上傳本機已儲存棋譜，並將後端棋譜全量分類至開局樹狀圖
+// V2.2/V2.9.7：雙向同步後端資料庫：上傳本機已儲存棋譜，並將後端棋譜全量分類至開局樹狀圖
 document.getElementById('syncBackendHistory')?.addEventListener('click', async ()=>{
   const btn = document.getElementById('syncBackendHistory');
   if (btn) {
