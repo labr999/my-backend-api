@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.13';
-const DISPLAY_VERSION = 'V2.9.13';
+const APP_VERSION = '2.9.14';
+const DISPLAY_VERSION = 'V2.9.14';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -698,6 +698,35 @@ app.get('/api/players/:name', (q, s) => {
   s.json({ player: { ...p, games: games.length }, games: games.map(sanitizeGame), stats: { games: games.length, wins, losses, draws, winRate: (wins + losses + draws) ? Number((wins / (wins + losses + draws) * 100).toFixed(1)) : 0 } });
 });
 
+/* V2.9.14：影片覆盤棋譜依「清單標題」分先後手與開局（同 video-scan title_class） */
+function titleClass(t) {
+  t = String(t || '').replace(/[（(]\s*\d+\s*部\s*[)）]/g, '').trim();
+  const m = t.match(/^\s*(先手|後手|后手)\s*[:：_\-－、 ]*(.*)$/);
+  if (!m) return null;
+  return { side: m[1] === '先手' ? '先手' : '後手', name: m[2].replace(/(專題)?清單$/, '').replace(/^[\s　_-]+|[\s　_-]+$/g, '') };
+}
+function videoCatIndex() {
+  const idx = {};
+  for (const pl of db.playlists || []) {
+    const tc = titleClass(pl.title); if (!tc) continue;
+    for (const it of pl.items || []) {
+      const old = idx[it.videoId];
+      if (!old || (!old.cat && tc.name)) idx[it.videoId] = { side: tc.side, cat: tc.name, playlist: pl.title, from: 'title' };
+    }
+  }
+  return idx;
+}
+function withVideoCat(list) {
+  let idx = null;
+  return list.map(g => {
+    if (!g || g.source !== 'video-scan' || !g.rawExport) return g;
+    let vx = null; try { vx = JSON.parse(g.rawExport); } catch { return g; }
+    if (!vx || !vx.videoId) return g;
+    idx = idx || videoCatIndex();
+    const vc = idx[vx.videoId] || (vx.host ? { side: vx.host === '黑方' ? '後手' : '先手', cat: '', from: 'board' } : null);
+    return vc ? { ...g, videoCat: vc } : g;
+  });
+}
 app.get('/api/games', (q, s) => {
   try {
     const { q: term = '', player = '', opening = '', year = '', playable = '' } = q.query;
@@ -728,7 +757,7 @@ app.get('/api/games', (q, s) => {
       if (playable && (!((g.exactMoves?.length || g.moves?.length) > 0))) return false;
       return true;
     });
-    s.json({ items: a.sort((x, y) => (y.id || 0) - (x.id || 0)).slice(0, 1000).map(sanitizeGame), total: a.length });
+    s.json({ items: withVideoCat(a.sort((x, y) => (y.id || 0) - (x.id || 0)).slice(0, 1000).map(sanitizeGame)), total: a.length });
   } catch(err) {
     console.error('API /api/games error:', err);
     s.status(500).json({ error: '獲取棋譜失敗：' + err.message, items: [], total: 0 });
