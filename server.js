@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.6';
-const DISPLAY_VERSION = 'V2.9.6';
+const APP_VERSION = '2.9.8';
+const DISPLAY_VERSION = 'V2.9.8';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -94,6 +94,7 @@ async function loadPg() {
       const d = JSON.parse(r.rows[0].data);
       db.players = Array.isArray(d.players) ? d.players : [];
       db.games = Array.isArray(d.games) ? d.games : [];
+      db.playlists = Array.isArray(d.playlists) ? d.playlists : (db.playlists || []);
       db.nextGameId = Number(d.nextGameId) || (db.games.reduce((m, g) => Math.max(m, Number(g.id) || 0), 0) + 1);
       for (const mp of MASTER_PLAYERS) if (!db.players.some(p => p.name === mp.name)) db.players.push({ ...mp });
       console.log(`[pg] 已從雲端資料庫載入 ${db.games.length} 盤、${db.players.length} 位棋手`);
@@ -124,6 +125,7 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 let db = readJson(DB_FILE, { players: [], games: [], nextGameId: 1 });
 if (!Array.isArray(db.players)) db.players = [];
 if (!Array.isArray(db.games)) db.games = [];
+if (!Array.isArray(db.playlists)) db.playlists = [];
 db.nextGameId = Number(db.nextGameId) || 1;
 for (const mp of MASTER_PLAYERS) {
   if (!db.players.some(p => p.name === mp.name)) db.players.push({ ...mp });
@@ -744,6 +746,66 @@ app.get('/api/games/:id', (q, s) => {
 app.post('/api/games', (q, s) => {
   const r = addGame(q.body || {});
   s.status(r.duplicate ? 200 : 201).json({ ok: true, duplicate: r.duplicate, game: sanitizeGame(r.game) });
+});
+
+/* ===== 我的清單（V2.9.8）：影片覆盤上傳的 YouTube 播放清單，棋譜依 videoId 自動對應 ===== */
+function videoGamesIndex() {
+  const idx = {};
+  for (const g of db.games) {
+    if (!g || g.source !== 'video-scan' || !g.rawExport) continue;
+    let vx = null; try { vx = JSON.parse(g.rawExport); } catch { continue; }
+    if (!vx || !vx.videoId) continue;
+    (idx[vx.videoId] = idx[vx.videoId] || []).push({ id: g.id, result: g.result || '未知', opening: g.opening || '', steps: (g.tokens || g.moves || []).length, game: Number(vx.game) || 0, host: vx.host || '' });
+  }
+  for (const k in idx) idx[k].sort((a, b) => a.game - b.game);
+  return idx;
+}
+function plSummary(pl, idx) {
+  const items = pl.items || [];
+  return { id: pl.id, title: pl.title, url: pl.url, updated_at: pl.updated_at, total: items.length, reviewed: items.filter(it => idx[it.videoId]).length };
+}
+app.get('/api/playlists', (q, s) => {
+  const idx = videoGamesIndex();
+  s.json({ items: db.playlists.map(pl => plSummary(pl, idx)) });
+});
+app.get('/api/playlists/:id', (q, s) => {
+  const pl = db.playlists.find(x => x.id === q.params.id);
+  if (!pl) return s.status(404).json({ error: '找不到清單' });
+  const idx = videoGamesIndex();
+  s.json({ ...plSummary(pl, idx), items: (pl.items || []).map(it => ({ ...it, games: idx[it.videoId] || [] })) });
+});
+app.post('/api/playlists', (q, s) => {
+  const b = q.body || {};
+  const id = String(b.id || '').trim().slice(0, 80);
+  if (!id || !Array.isArray(b.items)) return s.status(400).json({ error: '需要 id 與 items' });
+  let pl = db.playlists.find(x => x.id === id);
+  const old = {}; if (pl) for (const it of pl.items || []) old[it.videoId] = it;
+  const items = b.items.filter(it => it && it.videoId).slice(0, 2000).map((it, i) => ({
+    videoId: String(it.videoId).slice(0, 32), title: String(it.title || it.videoId).slice(0, 200), index: i + 1,
+    status: it.status != null ? String(it.status).slice(0, 40) : ((old[it.videoId] && old[it.videoId].status) || ''),
+    note: (old[it.videoId] && old[it.videoId].note) || '', time: it.time ? String(it.time).slice(0, 40) : ((old[it.videoId] && old[it.videoId].time) || '')
+  }));
+  const rec = { id, title: String(b.title || id).slice(0, 120), url: String(b.url || '').slice(0, 300), items, updated_at: new Date().toISOString() };
+  if (pl) Object.assign(pl, rec); else db.playlists.push(rec);
+  save();
+  s.json({ ok: true, playlist: plSummary(rec, videoGamesIndex()) });
+});
+app.post('/api/playlists/:id/status', (q, s) => {
+  const pl = db.playlists.find(x => x.id === q.params.id);
+  if (!pl) return s.status(404).json({ error: '找不到清單' });
+  const b = q.body || {};
+  const it = (pl.items || []).find(x => x.videoId === String(b.videoId || ''));
+  if (!it) return s.status(404).json({ error: '清單裡沒有這支影片' });
+  it.status = String(b.status || '').slice(0, 40); it.note = String(b.note || '').slice(0, 200); it.time = new Date().toISOString();
+  pl.updated_at = it.time;
+  save();
+  s.json({ ok: true });
+});
+app.delete('/api/playlists/:id', (q, s) => {
+  const n = db.playlists.length;
+  db.playlists = db.playlists.filter(x => x.id !== q.params.id);
+  if (db.playlists.length !== n) save();
+  s.json({ ok: true, removed: n - db.playlists.length });
 });
 
 app.post('/api/import-history', (q, s) => {
