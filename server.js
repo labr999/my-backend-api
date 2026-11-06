@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.11';
-const DISPLAY_VERSION = 'V2.9.11';
+const APP_VERSION = '2.9.12';
+const DISPLAY_VERSION = 'V2.9.12';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -810,26 +810,46 @@ async function ytGet(path, params) {
   }
   return j;
 }
+async function importPlaylist(lid, knownTitle) {
+  let title = knownTitle;
+  if (!title) {
+    const meta = await ytGet('playlists', { part: 'snippet', id: lid });
+    if (!meta.items || !meta.items.length) throw Object.assign(new Error('讀不到這個清單：私人清單請到 YouTube 改成「不公開」或「公開」'), { code: 404 });
+    title = meta.items[0].snippet?.title || lid;
+  }
+  const items = []; let pageToken = '';
+  for (let k = 0; k < 40; k++) {
+    const j = await ytGet('playlistItems', { part: 'snippet', playlistId: lid, maxResults: '50', ...(pageToken ? { pageToken } : {}) });
+    for (const x of j.items || []) {
+      const vid = x.snippet?.resourceId?.videoId; const t = x.snippet?.title || '';
+      if (vid && !items.some(y => y.videoId === vid) && t !== 'Private video' && t !== 'Deleted video') items.push({ videoId: vid, title: t });
+    }
+    pageToken = j.nextPageToken || ''; if (!pageToken) break;
+  }
+  return upsertPlaylist({ id: lid, title, url: 'https://www.youtube.com/playlist?list=' + lid, items });
+}
 app.post('/api/playlists/import', async (q, s) => {
   if (!process.env.YOUTUBE_API_KEY) return s.status(503).json({ error: '小棋聖尚未設定 YOUTUBE_API_KEY' });
   const m = String((q.body || {}).url || '').match(/(?:[?&]list=|^)(PL[\w-]{10,}|[\w-]{16,})/);
   if (!m) return s.status(400).json({ error: '請貼上含 list= 的播放清單網址' });
-  const lid = m[1];
+  try { s.json({ ok: true, playlist: await importPlaylist(m[1]) }); }
+  catch (e) { s.status(e.code || 500).json({ error: e.message }); }
+});
+/* V2.9.12：同步頻道（CHANNEL_ID）所有公開清單 */
+app.post('/api/playlists/import-channel', async (q, s) => {
+  if (!process.env.YOUTUBE_API_KEY || !process.env.CHANNEL_ID) return s.status(503).json({ error: '小棋聖尚未設定 YOUTUBE_API_KEY 或 CHANNEL_ID' });
   try {
-    const meta = await ytGet('playlists', { part: 'snippet', id: lid });
-    if (!meta.items || !meta.items.length) throw Object.assign(new Error('讀不到這個清單：私人清單請到 YouTube 改成「不公開」或「公開」'), { code: 404 });
-    const title = meta.items[0].snippet?.title || lid;
-    const items = []; let pageToken = '';
-    for (let k = 0; k < 40; k++) {
-      const j = await ytGet('playlistItems', { part: 'snippet', playlistId: lid, maxResults: '50', ...(pageToken ? { pageToken } : {}) });
-      for (const x of j.items || []) {
-        const vid = x.snippet?.resourceId?.videoId; const t = x.snippet?.title || '';
-        if (vid && !items.some(y => y.videoId === vid) && t !== 'Private video' && t !== 'Deleted video') items.push({ videoId: vid, title: t });
-      }
+    const lists = []; let pageToken = '';
+    for (let k = 0; k < 10; k++) {
+      const j = await ytGet('playlists', { part: 'snippet', channelId: process.env.CHANNEL_ID, maxResults: '50', ...(pageToken ? { pageToken } : {}) });
+      for (const x of j.items || []) lists.push({ id: x.id, title: x.snippet?.title || x.id });
       pageToken = j.nextPageToken || ''; if (!pageToken) break;
     }
-    const pl = upsertPlaylist({ id: lid, title, url: 'https://www.youtube.com/playlist?list=' + lid, items });
-    s.json({ ok: true, playlist: pl });
+    const done = [], failed = [];
+    for (const l of lists) {
+      try { done.push(await importPlaylist(l.id, l.title)); } catch (e) { failed.push({ id: l.id, title: l.title, error: e.message }); }
+    }
+    s.json({ ok: true, found: lists.length, playlists: done, failed });
   } catch (e) { s.status(e.code || 500).json({ error: e.message }); }
 });
 app.post('/api/playlists/:id/status', (q, s) => {
