@@ -2062,11 +2062,16 @@ function videoCatFor(side, name, opening){
   const has = c => DATA[side] && DATA[side][c];
   const swap = c => c.replace(/^中[砲炮]對/, m => '後手' + m);
   if (name) {
-    const n = name.trim();
-    const cands = side === '後手' ? [n, '後手' + n, '後手' + n.replace(/^對/, '對中炮'), swap(n)] : [n, n.replace(/^57/, '五七').replace(/[砲炮]/g, '砲'), '中砲' + n];
-    for (const c of cands) if (has(c)) return { cat: c, why: '依清單標題' };
-    const al = resolveOpeningAlias(n.replace(/57/g, '五七'));
+    // 清單標題常見別字：泡→砲、先人→仙人、反攻→反宮、57／56→五七／五六
+    const n = name.trim().replace(/泡/g, '砲').replace(/先人/g, '仙人').replace(/反攻/g, '反宮').replace(/57/g, '五七').replace(/56/g, '五六');
+    const nb = n.replace(/炮/g, '砲'), np = n.replace(/砲/g, '炮');
+    const cands = side === '後手'
+      ? [n, '後手' + n, '後手' + nb, '後手中炮' + np, '後手中砲' + nb, '後手對中炮' + np.replace(/^對/, ''), swap(nb)]
+      : [n, nb, np, '中砲' + nb, '中砲對' + nb, '中炮對' + np];
+    const al = resolveOpeningAlias(n);
+    for (const c of cands.slice(0, 3)) if (has(c)) return { cat: c, why: '依清單標題' };
     if (al && al.side === side) return { cat: al.cat, why: '依清單標題（' + n + '）' };
+    for (const c of cands) if (has(c)) return { cat: c, why: '依清單標題' };
     const nc = (side === '後手' && !/^後手/.test(n)) ? '後手' + n : n;
     ensureCategory(side, nc, side + '開局目錄：' + nc + '（依影片清單標題自動新增）');
     return { cat: nc, why: '依清單標題，新增目錄' };
