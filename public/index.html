@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#8B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="象棋開局">
-<title>象棋小棋聖 V2.9.15 ｜ 象棋開局譜</title>
+<title>象棋小棋聖 V2.9.16 ｜ 象棋開局譜</title>
 <style>
 
 :root{
@@ -54,7 +54,7 @@ body{font-family:'Noto Sans TC','Microsoft JhengHei','PingFang TC',sans-serif;ba
 @media (min-width: 920px){
   .home-layout{grid-template-columns:minmax(400px, 470px) 1fr;gap:20px;align-items:start}
   .home-left-col{position:sticky;top:116px;max-height:calc(100vh - 116px - 84px);overflow-y:auto;overscroll-behavior:contain}
-  /* V2.9.15：標題列按鈕換到第二行，避免副標題被擠成直排；棋盤縮到可同時看到播放按鈕 */
+  /* V2.9.16：標題列按鈕換到第二行，避免副標題被擠成直排；棋盤縮到可同時看到播放按鈕 */
   #mainBoardCard .board-header{flex-wrap:wrap}
   #mainBoardCard .board-title-group{flex:1 1 100%}
   #mainBoardCard .board-header-badges{flex-wrap:wrap}
@@ -229,7 +229,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
 .hidden{display:none !important}
 
-/* ===== V2.9.15 我的清單 ===== */
+/* ===== V2.9.16 我的清單 ===== */
 #myListCard{display:none}
 #myListCard.open{display:block}
 .ml-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
@@ -283,7 +283,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 <meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
-<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.15</span> <span id="xq-version-status">●</span></div>
+<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.16</span> <span id="xq-version-status">●</span></div>
 <script>
 (async()=>{try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();const el=document.getElementById('xq-version-status');if(el)el.textContent=d.ok?'● V'+d.version:'● OFFLINE';}catch(e){}})();
 </script>
@@ -407,7 +407,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 
       <!-- 右欄：著法記錄區、當前局勢分析、開局分類與說明 -->
       <div class="home-right-col">
-        <!-- 0. 我的清單（V2.9.15）：影片覆盤上傳的播放清單 -->
+        <!-- 0. 我的清單（V2.9.16）：影片覆盤上傳的播放清單 -->
         <div class="card" id="myListCard">
           <div class="ml-head">
             <h3 style="margin:0">📺 我的清單</h3>
@@ -691,7 +691,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
     </div>
     <div class="card">
       <h3>ℹ️ 關於</h3>
-      <div class="desc-text" style="padding-top:0">象棋小棋聖 V2.9.15：整合吾愛象棋教學播放清單、開局定式棋譜（前12步為定式主線、13步起為內建引擎推演）、先後手記譜、Pikafish/雲庫即時分析、AI最佳下一步推薦、語音評估優劣勢、開局分類樹狀圖、自訂與手動更改開局分類、YouTube影音連結與東萍大師棋譜同步庫。</div>
+      <div class="desc-text" style="padding-top:0">象棋小棋聖 V2.9.16：整合吾愛象棋教學播放清單、開局定式棋譜（前12步為定式主線、13步起為內建引擎推演）、先後手記譜、Pikafish/雲庫即時分析、AI最佳下一步推薦、語音評估優劣勢、開局分類樹狀圖、自訂與手動更改開局分類、YouTube影音連結與東萍大師棋譜同步庫。</div>
     </div>
   </section>
 
@@ -1185,9 +1185,18 @@ function drawBoardGrid(){
 }
 
 
+/* V2.9.16：影片老師擺局分支從擺好的局面（FEN）開始播放 */
+let currentStartPieces=null;
+function fenToPieces(fen){
+  const T={R:'車',N:'馬',B:'相',A:'仕',K:'帥',C:'炮',P:'兵',r:'車',n:'馬',b:'象',a:'士',k:'將',c:'砲',p:'卒'};
+  const rows=String(fen||'').split(' ')[0].split('/'); if(rows.length!==10) return null;
+  const out=[];
+  rows.forEach((row,r)=>{let c=0;for(const ch of row){ if(/\d/.test(ch)){c+=Number(ch);continue;} if(T[ch]) out.push({side:ch===ch.toUpperCase()?'r':'b',type:T[ch],col:c,row:r}); c++; }});
+  return out;
+}
 function computeBoardAt(index, movesArr){
   const src = movesArr || currentMoves;
-  const pieces = initialPieces().map(p=>({...p, alive:true}));
+  const pieces = ((src===currentMoves && currentStartPieces) ? currentStartPieces : initialPieces()).map(p=>({...p, alive:true}));
   for(let i=0;i<index;i++){
     const mv = src[i];
     const [fc,fr]=mv.from, [tc,tr]=mv.to;
@@ -2116,7 +2125,8 @@ function syncMasterGamesToOpeningTree(gamesList){
     let side = winnerSide;
     let cat = null, why = '';
 
-    // V2.9.15：影片覆盤棋譜依清單標題（或主播執哪方）歸先後手目錄，目錄沒有就新增
+    if (g.videoBranch) continue;  // V2.9.16：老師擺局分支只在我的清單播放，不進開局分類
+    // V2.9.16：影片覆盤棋譜依清單標題（或主播執哪方）歸先後手目錄，目錄沒有就新增
     if (g.videoCat && (g.videoCat.side === '先手' || g.videoCat.side === '後手')) {
       side = g.videoCat.side;
       const vc = videoCatFor(side, g.videoCat.cat, g.opening);
@@ -2508,7 +2518,7 @@ function renderMovesList(){
       wrap.appendChild(c);
     });
     if(wrap.id==='homeMoves'){
-      // V2.9.15：只在棋譜清單自身範圍內捲動，不帶動整頁，按下一手時棋盤與按鈕維持原位
+      // V2.9.16：只在棋譜清單自身範圍內捲動，不帶動整頁，按下一手時棋盤與按鈕維持原位
       const activeEl=wrap.querySelector('.move-chip.active');
       const box=wrap.closest('.moves-scroll-box')||wrap;
       if(activeEl && box.scrollHeight>box.clientHeight+2){
@@ -2868,7 +2878,7 @@ function loadLine(side,cat,idx){
   }
   curSide=side;curCat=cat;curIdx=idx;
   const entry=DATA[side][cat];const line=entry.lines[idx];
-  currentMoves=line.moves||[];currentIndex=0;
+  currentMoves=line.moves||[];currentIndex=0;currentStartPieces=null;
   flipBoard=(side==='後手');
   document.getElementById('boardTitle').textContent=line.name;
   document.getElementById('descBox').innerHTML=`<b>${cat}</b><br>${entry.intro}<br><br>${line.desc||''}<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" onclick="promptReclassifyCurrentGame()" style="padding:5px 12px;border:none;border-radius:8px;background:var(--surface-variant);color:var(--primary);font-size:.76rem;font-weight:700;cursor:pointer">✏️ 更改此局開局分類</button> <button type="button" onclick="promptAddCategory('${side}')" style="padding:5px 12px;border:none;border-radius:8px;background:var(--surface-variant);color:var(--primary);font-size:.76rem;font-weight:700;cursor:pointer">➕ 增加其他分類</button></div>`;
@@ -3229,7 +3239,7 @@ let analysisSeq=0;
 let __engineWorker=null, __enginePending=null, __fenPieces=null;
 function renderBoardFromPieces(fp){
   // 直接以指定棋子陣列渲染(FEN載入用)，不經 currentMoves
-  currentMoves=[];currentIndex=0;
+  currentMoves=[];currentIndex=0;currentStartPieces=null;
   ensureBoardShell();
   svgEl.__hlLayer.innerHTML='';
   let ph='';
@@ -3698,7 +3708,7 @@ document.getElementById('btnDoImport').addEventListener('click',()=>{
   } else if(isFEN(raw)){
     // FEN 是單一局面，載入到棋盤分析而非棋譜
     const fp=piecesFromFEN(raw);
-    currentMoves=[];currentIndex=0;
+    currentMoves=[];currentIndex=0;currentStartPieces=null;
     __fenPieces=fp;
     renderBoardFromPieces(fp);
     msg.innerHTML='✔ 已載入 FEN 盤面到棋盤（可至 AI 分頁分析）';msg.classList.add('ok');
@@ -4074,7 +4084,7 @@ function parseGameMoves(g) {
   return [];
 }
 
-async function playMasterGame(id) {
+async function playMasterGame(id, startFen) {
   try {
     const r = await fetch('/api/games/' + encodeURIComponent(id));
     if (!r.ok) throw new Error('棋譜載入失敗');
@@ -4090,6 +4100,7 @@ async function playMasterGame(id) {
     recordedMoves = [];
     currentMoves = moves;
     currentIndex = 0;
+    currentStartPieces = startFen ? fenToPieces(startFen) : null;
     flipBoard = false;
     document.getElementById('boardTitle').textContent = `${g.red || '紅方'} ${g.result || ''} ${g.black || '黑方'}`;
     document.getElementById('descBox').innerHTML = `<b>${g.red || '紅方'} 對 ${g.black || '黑方'}</b><br>${g.event || ''}（${g.year || ''}）<br>開局分類：<b>${g.opening || '未分類'}</b><br>來源：${g.detailUrl ? `<a href="${g.detailUrl}" target="_blank">東萍原始棋譜頁</a>` : '東萍公開索引'}`;
@@ -4193,6 +4204,7 @@ async function loadServerGameQuery(){
     recordedMoves = [];
     currentMoves = moves;
     currentIndex = 0;
+    { let vx={}; try{ vx=JSON.parse(g.rawExport||'{}'); }catch(e){} currentStartPieces = vx.startFen ? fenToPieces(vx.startFen) : null; }
     flipBoard = false;
     const title=document.getElementById('boardTitle'); if(title)title.textContent=(g.red||'紅方')+' '+(g.result||'')+' '+(g.black||'黑方');
     const desc=document.getElementById('descBox'); if(desc)desc.innerHTML='<b>東萍完整棋譜</b><br>'+(g.event||'')+'<br>開局：'+(g.opening||'未分類')+'<br>來源：'+(g.detailUrl?'<a href="'+g.detailUrl.replace(/"/g,'&quot;')+'" target="_blank">東萍原始棋譜頁</a>':'東萍公開索引');
@@ -4260,7 +4272,7 @@ document.addEventListener('click',function(e){const a=e.target.closest?e.target.
 // 啟動畫面
 setTimeout(()=>document.getElementById('splash')?.classList.add('hidden'),700);
 
-// V2.2/V2.9.15：雙向同步後端資料庫：上傳本機已儲存棋譜，並將後端棋譜全量分類至開局樹狀圖
+// V2.2/V2.9.16：雙向同步後端資料庫：上傳本機已儲存棋譜，並將後端棋譜全量分類至開局樹狀圖
 document.getElementById('syncBackendHistory')?.addEventListener('click', async ()=>{
   const btn = document.getElementById('syncBackendHistory');
   if (btn) {
@@ -4358,8 +4370,8 @@ if('serviceWorker' in navigator){
 </script>
 
 <script>
-/* ===== V2.9.15 我的清單：影片清單 → 載入覆盤棋譜 → 嵌入影片並依步數跳秒
-   V2.9.15：整合 xiang-video-search：清單內搜尋、搜我的頻道／全 YouTube、手動標記開局 ===== */
+/* ===== V2.9.16 我的清單：影片清單 → 載入覆盤棋譜 → 嵌入影片並依步數跳秒
+   V2.9.16：整合 xiang-video-search：清單內搜尋、搜我的頻道／全 YouTube、手動標記開局 ===== */
 const ML = { lists: [], cur: null, data: null, filter: 'all', yt: null, loaded: false, openings: null, view: null };
 function mlEsc(t){return String(t==null?'':t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 const ML_STATUS = { no_start:'找不到開局', too_short:'步數太少', engine_error:'引擎錯誤', error:'錯誤', ok:'已覆盤（擺局段落或未上傳）' };
@@ -4462,7 +4474,8 @@ function mlTagSelect(it){
 function mlRowHtml(it, no){
   const games=(it.games||[]).map((g,k)=>{
     const cls = g.result==='紅勝'?'win-r':(g.result==='黑勝'?'win-b':'');
-    const lbl = (it.games.length>1?('第'+(k+1)+'局 '):'') + g.result + ' ' + g.steps + '步';
+    const nMain=(it.games||[]).filter(x=>!x.branch).length;
+    const lbl = g.branch ? ('分支'+g.branch+' '+g.steps+'步') : ((nMain>1?('第'+((g.game||0)+1)+'局 '):'') + g.result + ' ' + g.steps + '步');
     return `<button type="button" class="ml-g ${cls} ${ML.yt&&String(ML.yt.gameId)===String(g.id)?'on':''}" title="${mlEsc(g.opening)}" onclick="event.stopPropagation();mlPlay('${mlEsc(it.videoId)}',${Number(g.id)})">${mlEsc(lbl)}</button>`;
   }).join('');
   const st = (it.games&&it.games.length) ? '' : `<span class="ml-st">${mlEsc(it.status ? (ML_STATUS[String(it.status).split(':')[0]]||it.status) : (it.channel!=null?'未覆盤':'未覆盤'))}</span>`;
@@ -4572,7 +4585,7 @@ async function mlPlay(videoId, gameId){
   try{ const r=await fetch('/api/games/'+gameId); if(!r.ok) throw new Error('HTTP '+r.status); g=await r.json(); }
   catch(e){ toast('棋譜載入失敗：'+e.message); return; }
   let vx={}; try{ vx=JSON.parse(g.rawExport||'{}'); }catch(e){}
-  await playMasterGame(gameId);
+  await playMasterGame(gameId, vx.startFen||null);
   const it=mlFindItem(videoId);
   ML.yt={ videoId, gameId, times: Array.isArray(vx.moveTimes)?vx.moveTimes:[], moves: currentMoves, lastIdx: -1 };
   try{ document.getElementById('boardTitle').textContent=((it&&it.index)?('#'+it.index+' '):'')+(g.result||''); document.getElementById('descBox').innerHTML='<b>'+mlEsc(g.event||'')+'</b><br>開局分類：<b>'+mlEsc(g.opening||'未分類')+'</b>（'+mlEsc(g.result||'未知')+'）<br>來源：影片覆盤 <a href="https://www.youtube.com/watch?v='+encodeURIComponent(videoId)+'" target="_blank" rel="noopener">YouTube</a>'; }catch(e){}

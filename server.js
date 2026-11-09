@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.15';
-const DISPLAY_VERSION = 'V2.9.15';
+const APP_VERSION = '2.9.16';
+const DISPLAY_VERSION = 'V2.9.16';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -754,6 +754,7 @@ function withVideoCat(list) {
     if (!g || g.source !== 'video-scan' || !g.rawExport) return g;
     let vx = null; try { vx = JSON.parse(g.rawExport); } catch { return g; }
     if (!vx || !vx.videoId) return g;
+    if (Number(vx.branch) > 0) return { ...g, videoBranch: Number(vx.branch) };  // 老師擺局分支：不進開局分類
     idx = idx || videoCatIndex();
     const vc = idx[vx.videoId] || (vx.host ? { side: vx.host === '黑方' ? '後手' : '先手', cat: '', from: 'board' } : null);
     return vc ? { ...g, videoCat: vc } : g;
@@ -818,9 +819,9 @@ function videoGamesIndex() {
     if (!g || g.source !== 'video-scan' || !g.rawExport) continue;
     let vx = null; try { vx = JSON.parse(g.rawExport); } catch { continue; }
     if (!vx || !vx.videoId) continue;
-    (idx[vx.videoId] = idx[vx.videoId] || []).push({ id: g.id, result: g.result || '未知', opening: g.opening || '', steps: (g.tokens || g.moves || []).length, game: Number(vx.game) || 0, host: vx.host || '' });
+    (idx[vx.videoId] = idx[vx.videoId] || []).push({ id: g.id, result: g.result || '未知', opening: g.opening || '', steps: (g.tokens || g.moves || []).length, game: Number(vx.game) || 0, branch: Number(vx.branch) || 0, host: vx.host || '' });
   }
-  for (const k in idx) idx[k].sort((a, b) => a.game - b.game);
+  for (const k in idx) idx[k].sort((a, b) => a.game - b.game || a.branch - b.branch);
   return idx;
 }
 function plSummary(pl, idx) {
