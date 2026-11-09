@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.14';
-const DISPLAY_VERSION = 'V2.9.14';
+const APP_VERSION = '2.9.15';
+const DISPLAY_VERSION = 'V2.9.15';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -542,11 +542,43 @@ const DPXQ_HEADERS = {
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
 };
 
-async function fetchDpxqHtml(url) {
-  const res = await fetch(url, { headers: DPXQ_HEADERS });
+/* V2.9.15：東萍棋譜倉庫 2026-11 起搜尋頁要登入（「AI爬虫机器人太多了,请先登陆」）。
+   帳密放 Render 環境變數 DPXQ_USER／DPXQ_PASS，伺服器自動登入並保存 cookie。 */
+let dpxqCookies = {};
+const dpxqCookieHeader = () => Object.entries(dpxqCookies).map(([k, v]) => k + '=' + v).join('; ');
+function dpxqTakeCookies(res, body) {
+  const list = typeof res.headers.getSetCookie === 'function' ? res.headers.getSetCookie() : [res.headers.get('set-cookie')].filter(Boolean);
+  for (const c of list) { const m = String(c).match(/^\s*([^=;\s]+)=([^;]*)/); if (m) dpxqCookies[m[1]] = m[2]; }
+  for (const m of String(body || '').matchAll(/SetCookie\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]*)['"]/g)) dpxqCookies[m[1]] = escape(m[2]);
+}
+const dpxqNeedsLogin = html => /请先登[陆录]|請先登[陸錄]/.test(html) && !/javascript:view\(/i.test(html);
+function dpxqLoginError(msg) { const e = new Error(msg); e.code = 'DPXQ_LOGIN'; return e; }
+async function dpxqLogin() {
+  const user = process.env.DPXQ_USER, pass = process.env.DPXQ_PASS;
+  if (!user || !pass) throw dpxqLoginError('東萍棋譜倉庫現在要登入才能搜尋。請到東萍註冊帳號，並在 Render 環境變數設 DPXQ_USER、DPXQ_PASS。');
+  const body = 'username=' + gbkEncodeUrl(user) + '&password=' + gbkEncodeUrl(pass) + '&CookieOK=1&action=chk&owner=&id=&f=&isSave=';
+  const res = await fetch('http://www.dpxq.com/hldcg/search/login.asp', {
+    method: 'POST', redirect: 'manual',
+    headers: { ...DPXQ_HEADERS, 'Content-Type': 'application/x-www-form-urlencoded', Cookie: dpxqCookieHeader() }, body
+  });
+  const html = iconv.decode(Buffer.from(await res.arrayBuffer()), 'gbk');
+  dpxqTakeCookies(res, html);
+  if (/用户名或密码错误|用戶名或密碼錯誤/.test(html)) throw dpxqLoginError('東萍登入失敗：DPXQ_USER／DPXQ_PASS 帳號或密碼錯誤。');
+  return true;
+}
+let dpxqLastLogin = { ok: null, at: null, error: '' };
+async function fetchDpxqHtml(url, _retried) {
+  const res = await fetch(url, { headers: { ...DPXQ_HEADERS, Cookie: dpxqCookieHeader() } });
   if (!res.ok) throw new Error(`東萍伺服器回應錯誤 HTTP ${res.status}`);
-  const buf = await res.arrayBuffer();
-  return iconv.decode(Buffer.from(buf), 'gbk');
+  const html = iconv.decode(Buffer.from(await res.arrayBuffer()), 'gbk');
+  dpxqTakeCookies(res, html);
+  if (dpxqNeedsLogin(html)) {
+    if (_retried) { dpxqLastLogin = { ok: false, at: new Date().toISOString(), error: '登入後仍被要求登入' }; throw dpxqLoginError('東萍已登入但搜尋仍要求登入，請確認帳號可正常使用。'); }
+    try { await dpxqLogin(); dpxqLastLogin = { ok: true, at: new Date().toISOString(), error: '' }; }
+    catch (e) { dpxqLastLogin = { ok: false, at: new Date().toISOString(), error: e.message }; throw e; }
+    return fetchDpxqHtml(url, true);
+  }
+  return html;
 }
 
 async function fetchWithBrowser(url) {
@@ -659,7 +691,7 @@ async function importOne(url) {
   throw new Error('已開啟東萍頁面，但沒有找到 DhtmlXQ / WXF 棋譜資料');
 }
 
-app.get('/api/health', (q, s) => s.json({ ok: true, service: 'xiangqi-web-suite', version: APP_VERSION, displayVersion: DISPLAY_VERSION, storage: pgReady ? 'postgres' : 'json', pgLastSave, pgError: pgError || undefined, games: db.games.length, maxPages: MAX_PLAYER_PAGES, maxGames: MAX_PLAYER_GAMES, time: new Date().toISOString() }));
+app.get('/api/health', (q, s) => s.json({ ok: true, service: 'xiangqi-web-suite', version: APP_VERSION, displayVersion: DISPLAY_VERSION, storage: pgReady ? 'postgres' : 'json', pgLastSave, pgError: pgError || undefined, dpxqLogin: { configured: !!(process.env.DPXQ_USER && process.env.DPXQ_PASS), ...dpxqLastLogin }, games: db.games.length, maxPages: MAX_PLAYER_PAGES, maxGames: MAX_PLAYER_GAMES, time: new Date().toISOString() }));
 app.get('/api/stats', (q, s) => s.json({ players: db.players.length, games: db.games.length, playableGames: db.games.filter(g => g.exactMoves?.length || g.moves?.length).length }));
 
 app.get('/api/players', (q, s) => {
@@ -1078,7 +1110,8 @@ async function discoverPlayerPages(player, maxPages = MAX_PLAYER_PAGES, maxGames
             }
           }
           if (newCount === 0) break;
-        } catch {
+        } catch (e) {
+          if (e && e.code === 'DPXQ_LOGIN') throw e;
           break;
         }
       }
