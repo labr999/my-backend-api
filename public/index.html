@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#8B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="象棋開局">
-<title>象棋小棋聖 V2.9.17 ｜ 象棋開局譜</title>
+<title>象棋小棋聖 V2.9.18 ｜ 象棋開局譜</title>
 <style>
 
 :root{
@@ -225,7 +225,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 .drawer-item{display:flex;align-items:center;gap:14px;padding:14px 12px;border-radius:var(--radius-md);cursor:pointer;color:var(--on-surface);font-size:.9rem}
 .drawer-item:active{background:var(--surface-variant)}
 .drawer-item .ic{font-size:1.15rem;width:26px;text-align:center}
-/* V2.9.17：提示訊息隱藏時不擋觸控（手機下方圖示點不到） */
+/* V2.9.18：提示訊息隱藏時不擋觸控（手機下方圖示點不到） */
 .toast{position:fixed;bottom:calc(80px + var(--safe-bottom));left:50%;transform:translateX(-50%) translateY(120%);background:var(--on-surface);color:var(--surface);padding:12px 20px;border-radius:var(--radius-md);font-size:.86rem;z-index:500;opacity:0;transition:all .35s;box-shadow:var(--shadow-3);max-width:90vw;pointer-events:none;visibility:hidden}
 .toast.show{transform:translateX(-50%) translateY(0);opacity:1;visibility:visible;pointer-events:auto}
 .hidden{display:none !important}
@@ -284,7 +284,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 <meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
-<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.17</span> <span id="xq-version-status">●</span></div>
+<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.18</span> <span id="xq-version-status">●</span></div>
 <script>
 (async()=>{try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();const el=document.getElementById('xq-version-status');if(el)el.textContent=d.ok?'● V'+d.version:'● OFFLINE';}catch(e){}})();
 </script>
@@ -417,7 +417,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
             <button type="button" class="ml-g" onclick="mlImport(true)" title="從 YouTube 重新同步目前清單">🔄 重新同步</button>
             <button type="button" class="ml-g" onclick="mlImportChannel()" title="同步你頻道所有公開清單（私人、不公開的清單請用「貼清單網址」）">📥 同步頻道公開清單</button>
             <span class="ml-filter" id="mlFilter">
-              <button type="button" class="on" data-f="all">全部</button><button type="button" data-f="done">已覆盤</button><button type="button" data-f="todo">未覆盤</button><button type="button" data-f="queued">待辨識</button>
+              <button type="button" class="on" data-f="all">全部</button><button type="button" data-f="done">已覆盤</button><button type="button" data-f="todo">未覆盤</button><button type="button" data-f="queued">待辨識</button><button type="button" data-f="short" title="辨識不成功：只有 20 步內的棋譜">短棋譜≤20步</button>
             </span>
             <span class="ml-count" id="mlCount"></span>
           </div>
@@ -433,6 +433,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
             <button type="button" class="ml-g" onclick="mlQueueAll(true)" title="把目前列表（依篩選與搜尋）全部勾選">☑ 目前列表全選</button>
             <button type="button" class="ml-g" onclick="mlQueueAll(false)">清空勾選</button>
             <button type="button" class="ml-g" onclick="mlMultiOpen()" title="一次勾選多個清單的未覆盤影片">📋 多清單勾選</button>
+            <button type="button" class="ml-g" onclick="mlRedoAll()" title="目前列表裡 20 步內的棋譜全部刪除並重新辨識">🔁 短棋譜全部重辨</button>
             <span id="mlQall" class="ml-qhint"></span>
             <span class="ml-qhint">勾好後在電腦執行影片覆盤，選「Q」就只辨識勾選的影片</span>
           </div>
@@ -4375,7 +4376,7 @@ if('serviceWorker' in navigator){
    V2.9.16：整合 xiang-video-search：清單內搜尋、搜我的頻道／全 YouTube、手動標記開局 ===== */
 const ML = { lists: [], cur: null, data: null, filter: 'all', yt: null, loaded: false, openings: null, view: null };
 function mlEsc(t){return String(t==null?'':t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-const ML_STATUS = { no_start:'找不到開局', too_short:'步數太少', engine_error:'引擎錯誤', error:'錯誤', ok:'已覆盤（擺局段落或未上傳）' };
+const ML_STATUS = { no_start:'找不到開局', too_short:'步數太少', engine_error:'引擎錯誤', error:'錯誤', ok:'已覆盤（擺局段落或未上傳）', redo:'等待重新辨識' };
 function toggleMyList(force){
   const card=document.getElementById('myListCard'), btn=document.getElementById('myListNavBtn');
   const open = force!=null ? force : !card.classList.contains('open');
@@ -4477,8 +4478,9 @@ function mlRowHtml(it, no){
     const cls = g.result==='紅勝'?'win-r':(g.result==='黑勝'?'win-b':'');
     const nMain=(it.games||[]).filter(x=>!x.branch).length;
     const lbl = g.branch ? ('分支'+g.branch+' '+g.steps+'步') : ((nMain>1?('第'+((g.game||0)+1)+'局 '):'') + g.result + ' ' + g.steps + '步');
-    return `<button type="button" class="ml-g ${cls} ${ML.yt&&String(ML.yt.gameId)===String(g.id)?'on':''}" title="${mlEsc(g.opening)}" onclick="event.stopPropagation();mlPlay('${mlEsc(it.videoId)}',${Number(g.id)})">${mlEsc(lbl)}</button>`;
-  }).join('');
+    const del = mlIsShort(g) ? `<button type="button" class="ml-g ml-del" title="刪除這盤（辨識不成功）" onclick="event.stopPropagation();mlDelGame('${mlEsc(it.videoId)}',${Number(g.id)})">🗑</button>` : '';
+    return `<button type="button" class="ml-g ${cls} ${ML.yt&&String(ML.yt.gameId)===String(g.id)?'on':''}" title="${mlEsc(g.opening)}" onclick="event.stopPropagation();mlPlay('${mlEsc(it.videoId)}',${Number(g.id)})">${mlEsc(lbl)}</button>${del}`;
+  }).join('') + (ML.view==='list' && mlHasShort(it) ? `<button type="button" class="ml-g ml-redo" title="刪除 20 步內的棋譜並排入重新辨識" onclick="event.stopPropagation();mlRedo(['${mlEsc(it.videoId)}'])">🔁 重新辨識</button>` : '');
   const st = (it.games&&it.games.length) ? '' : `<span class="ml-st">${mlEsc(it.status ? (ML_STATUS[String(it.status).split(':')[0]]||it.status) : (it.channel!=null?'未覆盤':'未覆盤'))}</span>`;
   const click = (it.games&&it.games.length) ? `mlPlay('${mlEsc(it.videoId)}',${Number(it.games[0].id)})` : `mlWatch('${mlEsc(it.videoId)}')`;
   const sub = [it.channel, it.published, it.tag?('🏷 '+it.tag.side+'・'+it.tag.opening):'', (it.games&&it.games[0]&&it.games[0].opening)?('♟ '+it.games[0].opening):''].filter(Boolean).join('　');
@@ -4500,7 +4502,25 @@ function mlRender(){
   if(!items.length){ box.innerHTML='<div class="ml-empty">沒有符合的影片</div>'; return; }
   box.innerHTML=items.map(it=>mlRowHtml(it,it.index)).join('');
 }
-function mlPass(it){ const n=(it.games||[]).length; return ML.filter==='all' || (ML.filter==='done'?n:(ML.filter==='queued'?it.queued:!n)); }
+function mlPass(it){ const n=(it.games||[]).length; if(ML.filter==='short') return mlHasShort(it); return ML.filter==='all' || (ML.filter==='done'?n:(ML.filter==='queued'?it.queued:!n)); }
+/* V2.9.18：辨識不成功（20 步內）的棋譜可刪除、重新辨識 */
+function mlIsShort(g){ return g && !g.branch && Number(g.steps)<=20; }
+function mlHasShort(it){ return (it.games||[]).some(mlIsShort); }
+async function mlDelGame(videoId,id){
+  if(!confirm('刪除這盤 20 步內的辨識棋譜？')) return;
+  try{ const r=await fetch('/api/games/'+id,{method:'DELETE'}); const d=await r.json(); if(!r.ok) throw new Error(d.error||r.status);
+    const it=ML.data&&ML.data.items.find(x=>x.videoId===videoId); if(it){ it.games=(it.games||[]).filter(g=>Number(g.id)!==Number(id)); if(!it.games.length) ML.data.reviewed=Math.max(0,ML.data.reviewed-1); }
+    toast('已刪除'); mlRender(); }
+  catch(e){ toast('刪除失敗：'+e.message); }
+}
+async function mlRedo(ids){
+  if(!ML.cur||!ids.length) return;
+  if(!confirm((ids.length>1?ids.length+' 支影片':'這支影片')+'的 20 步內棋譜會刪除，並排入重新辨識（電腦執行影片覆盤選 Q）。確定？')) return;
+  try{ const r=await fetch('/api/playlists/'+encodeURIComponent(ML.cur)+'/redo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({videoIds:ids})}); const d=await r.json(); if(!r.ok) throw new Error(d.error||r.status);
+    toast('已刪除 '+d.deleted+' 盤，'+d.queued+' 支排入重新辨識'); await mlLoad(ML.cur); }
+  catch(e){ toast('失敗：'+e.message); }
+}
+function mlRedoAll(){ const ids=mlListItems().filter(mlHasShort).map(x=>x.videoId); if(!ids.length){ toast('目前列表沒有 20 步內的棋譜'); return; } mlRedo(ids); }
 function mlListItems(){ const q=document.getElementById('mlQ').value.trim(); return ((ML.data&&ML.data.items)||[]).filter(it=>mlPass(it)&&mlMatch(it,q)); }
 function mlQbar(){
   const bar=document.getElementById('mlQbar'); bar.classList.toggle('show', ML.view==='list' && !!ML.data);

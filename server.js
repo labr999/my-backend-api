@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.17';
-const DISPLAY_VERSION = 'V2.9.17';
+const APP_VERSION = '2.9.18';
+const DISPLAY_VERSION = 'V2.9.18';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -846,7 +846,7 @@ function upsertPlaylist(b) {
   const items = b.items.filter(it => it && it.videoId).slice(0, 2000).map((it, i) => ({
     videoId: String(it.videoId).slice(0, 32), title: String(it.title || it.videoId).slice(0, 200), index: i + 1,
     status: it.status != null ? String(it.status).slice(0, 40) : ((old[it.videoId] && old[it.videoId].status) || ''),
-    note: (old[it.videoId] && old[it.videoId].note) || '', queued: !!(old[it.videoId] && old[it.videoId].queued),
+    note: (old[it.videoId] && old[it.videoId].note) || '', queued: !!(old[it.videoId] && old[it.videoId].queued), redo: !!(old[it.videoId] && old[it.videoId].redo),
     time: it.time ? String(it.time).slice(0, 40) : ((old[it.videoId] && old[it.videoId].time) || '')
   }));
   const rec = { id, title: String(b.title || id).slice(0, 120), url: String(b.url || '').slice(0, 300), items, updated_at: new Date().toISOString() };
@@ -922,10 +922,36 @@ app.post('/api/playlists/:id/status', (q, s) => {
   if (!it) return s.status(404).json({ error: '清單裡沒有這支影片' });
   it.status = String(b.status || '').slice(0, 40); it.note = String(b.note || '').slice(0, 200); it.time = new Date().toISOString();
   // V2.9.10：辨識完成（含找不到開局、步數太少）就移出待辨識；下載失敗、引擎錯誤留著下次再跑
-  if (it.queued && !/^(error|engine_error)/.test(it.status)) it.queued = false;
+  if (it.queued && !/^(error|engine_error)/.test(it.status)) { it.queued = false; it.redo = false; }
   pl.updated_at = it.time;
   save();
   s.json({ ok: true });
+});
+/* V2.9.18：辨識不成功（20 步內）的影片棋譜可刪除、可重新辨識 */
+const SHORT_STEPS = 20;
+function videoGameInfo(g) {
+  if (!g || g.source !== 'video-scan') return null;
+  let vx = {}; try { vx = JSON.parse(g.rawExport || '{}') || {}; } catch {}
+  return { videoId: vx.videoId || '', branch: Number(vx.branch) || 0, steps: (g.tokens || g.moves || []).length };
+}
+app.delete('/api/games/:id', (q, s) => {
+  const i = db.games.findIndex(x => String(x.id) === String(q.params.id));
+  if (i < 0) return s.status(404).json({ error: '找不到棋譜' });
+  const inf = videoGameInfo(db.games[i]);
+  if (!inf || inf.steps > SHORT_STEPS) return s.status(403).json({ error: '只能刪除 ' + SHORT_STEPS + ' 步內的影片辨識棋譜' });
+  db.games.splice(i, 1); save();
+  s.json({ ok: true, deleted: 1 });
+});
+app.post('/api/playlists/:id/redo', (q, s) => {
+  const pl = db.playlists.find(x => x.id === q.params.id);
+  if (!pl) return s.status(404).json({ error: '找不到清單' });
+  const b = q.body || {};
+  const ids = new Set((Array.isArray(b.videoIds) ? b.videoIds : [b.videoId]).map(String));
+  let deleted = 0, queued = 0;
+  db.games = db.games.filter(g => { const inf = videoGameInfo(g); if (inf && ids.has(inf.videoId) && !inf.branch && inf.steps <= SHORT_STEPS) { deleted++; return false; } return true; });
+  for (const it of pl.items || []) if (ids.has(it.videoId)) { it.queued = true; it.redo = true; it.status = 'redo'; queued++; }
+  save();
+  s.json({ ok: true, deleted, queued, totalQueued: (pl.items || []).filter(x => x.queued).length });
 });
 /* V2.9.10：在小棋聖勾選要辨識的影片，影片覆盤 --queue 依序處理 */
 app.post('/api/playlists/:id/queue', (q, s) => {
@@ -943,7 +969,7 @@ app.post('/api/playlists/:id/queue', (q, s) => {
 app.get('/api/queue', (q, s) => {
   const out = [];
   for (const pl of db.playlists) for (const it of pl.items || []) if (it.queued)
-    out.push({ playlistId: pl.id, playlistTitle: pl.title, videoId: it.videoId, title: it.title, index: it.index, status: it.status || '' });
+    out.push({ playlistId: pl.id, playlistTitle: pl.title, videoId: it.videoId, title: it.title, index: it.index, status: it.status || '', redo: !!it.redo });
   s.json({ items: out });
 });
 app.delete('/api/playlists/:id', (q, s) => {
