@@ -1299,6 +1299,9 @@ function isDhtmlXQ(text){ return /\[DhtmlXQ_movelist\]/.test(text); }function pa
 }
 
 function tokenizeRecord(text){
+  // V2.9.19：紅方傳統字（俥、傌、伡、包）與全形數字也能匯入
+  text=String(text||'').replace(/[俥伡]/g,'車').replace(/傌/g,'馬').replace(/包/g,'炮').replace(/[帥帅]/g,'帥')
+    .replace(/[１-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFF10+48)).replace(/[／]/g,'');
   return text.match(MOVE_TOKEN_RE) || [];
 }
 
