@@ -156,8 +156,8 @@ select.field{appearance:auto}
 .drawer-item{display:flex;align-items:center;gap:14px;padding:14px 12px;border-radius:var(--radius-md);cursor:pointer;color:var(--on-surface);font-size:.9rem}
 .drawer-item:active{background:var(--surface-variant)}
 .drawer-item .ic{font-size:1.15rem;width:26px;text-align:center}
-.toast{position:fixed;bottom:calc(80px + var(--safe-bottom));left:50%;transform:translateX(-50%) translateY(120%);background:var(--on-surface);color:var(--surface);padding:12px 20px;border-radius:var(--radius-md);font-size:.86rem;z-index:500;opacity:0;transition:all .35s;box-shadow:var(--shadow-3);max-width:90vw}
-.toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+.toast{position:fixed;bottom:calc(80px + var(--safe-bottom));left:50%;transform:translateX(-50%) translateY(120%);background:var(--on-surface);color:var(--surface);padding:12px 20px;border-radius:var(--radius-md);font-size:.86rem;z-index:500;opacity:0;transition:all .35s;box-shadow:var(--shadow-3);max-width:90vw;pointer-events:none;visibility:hidden}
+.toast.show{transform:translateX(-50%) translateY(0);opacity:1;visibility:visible;pointer-events:auto}
 .hidden{display:none !important}
 
 </style>

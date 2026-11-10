@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#8B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="象棋開局">
-<title>象棋小棋聖 V2.9.16 ｜ 象棋開局譜</title>
+<title>象棋小棋聖 V2.9.17 ｜ 象棋開局譜</title>
 <style>
 
 :root{
@@ -225,8 +225,9 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 .drawer-item{display:flex;align-items:center;gap:14px;padding:14px 12px;border-radius:var(--radius-md);cursor:pointer;color:var(--on-surface);font-size:.9rem}
 .drawer-item:active{background:var(--surface-variant)}
 .drawer-item .ic{font-size:1.15rem;width:26px;text-align:center}
-.toast{position:fixed;bottom:calc(80px + var(--safe-bottom));left:50%;transform:translateX(-50%) translateY(120%);background:var(--on-surface);color:var(--surface);padding:12px 20px;border-radius:var(--radius-md);font-size:.86rem;z-index:500;opacity:0;transition:all .35s;box-shadow:var(--shadow-3);max-width:90vw}
-.toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+/* V2.9.17：提示訊息隱藏時不擋觸控（手機下方圖示點不到） */
+.toast{position:fixed;bottom:calc(80px + var(--safe-bottom));left:50%;transform:translateX(-50%) translateY(120%);background:var(--on-surface);color:var(--surface);padding:12px 20px;border-radius:var(--radius-md);font-size:.86rem;z-index:500;opacity:0;transition:all .35s;box-shadow:var(--shadow-3);max-width:90vw;pointer-events:none;visibility:hidden}
+.toast.show{transform:translateX(-50%) translateY(0);opacity:1;visibility:visible;pointer-events:auto}
 .hidden{display:none !important}
 
 /* ===== V2.9.16 我的清單 ===== */
@@ -283,7 +284,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 <meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
-<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.16</span> <span id="xq-version-status">●</span></div>
+<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.17</span> <span id="xq-version-status">●</span></div>
 <script>
 (async()=>{try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();const el=document.getElementById('xq-version-status');if(el)el.textContent=d.ok?'● V'+d.version:'● OFFLINE';}catch(e){}})();
 </script>
