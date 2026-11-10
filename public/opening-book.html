@@ -487,10 +487,20 @@ function applyNotation(state, side, str){
   }
   // pick the first candidate whose destination doesn't land on a friendly piece (legality check)
   let piece=ordered[0], dest=null;
-  for(const cand of ordered){
+  // V2.9.20：同一直線有兩子又沒寫前後（如兩車都在四路寫「車四進四」），先挑真的合法的那一子
+  let legalSet=null;
+  try{ const alive=state.filter(p=>p.alive); legalSet=new Set(genMoves(buildBoard(alive), side).map(m=>m.fc+','+m.fr+','+m.tc+','+m.tr)); }catch(e){ legalSet=null; }
+  if(legalSet){
+    for(const cand of ordered){
+      const d = computeDestForPiece(cand, side, category, action, target);
+      if(legalSet.has(cand.col+','+cand.row+','+d[0]+','+d[1])){ piece=cand; dest=d; break; }
+    }
+  }
+  if(!dest) for(const cand of ordered){
     const d = computeDestForPiece(cand, side, category, action, target);
+    const onBoard = d[0]>=0 && d[0]<=8 && d[1]>=0 && d[1]<=9;
     const blocked = state.some(p=>p.alive && p.side===side && p!==cand && p.col===d[0] && p.row===d[1]);
-    if(!blocked){ piece=cand; dest=d; break; }
+    if(onBoard && !blocked){ piece=cand; dest=d; break; }
   }
   if(!dest) dest = computeDestForPiece(piece, side, category, action, target);
   const fromCol=piece.col, fromRow=piece.row;
@@ -1299,7 +1309,7 @@ function isDhtmlXQ(text){ return /\[DhtmlXQ_movelist\]/.test(text); }function pa
 }
 
 function tokenizeRecord(text){
-  // V2.9.19：紅方傳統字（俥、傌、伡、包）與全形數字也能匯入
+  // V2.9.20：紅方傳統字（俥、傌、伡、包）與全形數字也能匯入
   text=String(text||'').replace(/[俥伡]/g,'車').replace(/傌/g,'馬').replace(/包/g,'炮').replace(/[帥帅]/g,'帥')
     .replace(/[１-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFF10+48)).replace(/[／]/g,'');
   return text.match(MOVE_TOKEN_RE) || [];

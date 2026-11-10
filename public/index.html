@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#8B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="象棋開局">
-<title>象棋小棋聖 V2.9.19 ｜ 象棋開局譜</title>
+<title>象棋小棋聖 V2.9.20 ｜ 象棋開局譜</title>
 <style>
 
 :root{
@@ -225,7 +225,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 .drawer-item{display:flex;align-items:center;gap:14px;padding:14px 12px;border-radius:var(--radius-md);cursor:pointer;color:var(--on-surface);font-size:.9rem}
 .drawer-item:active{background:var(--surface-variant)}
 .drawer-item .ic{font-size:1.15rem;width:26px;text-align:center}
-/* V2.9.19：提示訊息隱藏時不擋觸控（手機下方圖示點不到） */
+/* V2.9.20：提示訊息隱藏時不擋觸控（手機下方圖示點不到） */
 .toast{position:fixed;bottom:calc(80px + var(--safe-bottom));left:50%;transform:translateX(-50%) translateY(120%);background:var(--on-surface);color:var(--surface);padding:12px 20px;border-radius:var(--radius-md);font-size:.86rem;z-index:500;opacity:0;transition:all .35s;box-shadow:var(--shadow-3);max-width:90vw;pointer-events:none;visibility:hidden}
 .toast.show{transform:translateX(-50%) translateY(0);opacity:1;visibility:visible;pointer-events:auto}
 .hidden{display:none !important}
@@ -284,7 +284,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 <meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
-<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.19</span> <span id="xq-version-status">●</span></div>
+<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.20</span> <span id="xq-version-status">●</span></div>
 <script>
 (async()=>{try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();const el=document.getElementById('xq-version-status');if(el)el.textContent=d.ok?'● V'+d.version:'● OFFLINE';}catch(e){}})();
 </script>
@@ -941,10 +941,20 @@ function applyNotation(state, side, str){
   }
   // pick the first candidate whose destination doesn't land on a friendly piece (legality check)
   let piece=ordered[0], dest=null;
-  for(const cand of ordered){
+  // V2.9.20：同一直線有兩子又沒寫前後（如兩車都在四路寫「車四進四」），先挑真的合法的那一子
+  let legalSet=null;
+  try{ const alive=state.filter(p=>p.alive); legalSet=new Set(genMoves(buildBoard(alive), side).map(m=>m.fc+','+m.fr+','+m.tc+','+m.tr)); }catch(e){ legalSet=null; }
+  if(legalSet){
+    for(const cand of ordered){
+      const d = computeDestForPiece(cand, side, category, action, target);
+      if(legalSet.has(cand.col+','+cand.row+','+d[0]+','+d[1])){ piece=cand; dest=d; break; }
+    }
+  }
+  if(!dest) for(const cand of ordered){
     const d = computeDestForPiece(cand, side, category, action, target);
+    const onBoard = d[0]>=0 && d[0]<=8 && d[1]>=0 && d[1]<=9;
     const blocked = state.some(p=>p.alive && p.side===side && p!==cand && p.col===d[0] && p.row===d[1]);
-    if(!blocked){ piece=cand; dest=d; break; }
+    if(onBoard && !blocked){ piece=cand; dest=d; break; }
   }
   if(!dest && piece) dest = computeDestForPiece(piece, side, category, action, target);
   if(!piece || !dest) return {from:[0,0], to:[0,0]};
@@ -1839,7 +1849,7 @@ function isDhtmlXQ(text){ return /\[DhtmlXQ_movelist\]/.test(text); }function pa
 }
 
 function tokenizeRecord(text){
-  // V2.9.19：紅方傳統字（俥、傌、伡、包）與全形數字也能匯入
+  // V2.9.20：紅方傳統字（俥、傌、伡、包）與全形數字也能匯入
   text=String(text||'').replace(/[俥伡]/g,'車').replace(/傌/g,'馬').replace(/包/g,'炮').replace(/[帥帅]/g,'帥')
     .replace(/[１-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFF10+48)).replace(/[／]/g,'');
   return text.match(MOVE_TOKEN_RE) || [];
@@ -4506,7 +4516,7 @@ function mlRender(){
   box.innerHTML=items.map(it=>mlRowHtml(it,it.index)).join('');
 }
 function mlPass(it){ const n=(it.games||[]).length; if(ML.filter==='short') return mlHasShort(it); return ML.filter==='all' || (ML.filter==='done'?n:(ML.filter==='queued'?it.queued:!n)); }
-/* V2.9.19：辨識不成功（20 步內）的棋譜可刪除、重新辨識 */
+/* V2.9.20：辨識不成功（20 步內）的棋譜可刪除、重新辨識 */
 function mlIsShort(g){ return g && !g.branch && Number(g.steps)<=20; }
 function mlHasShort(it){ return (it.games||[]).some(mlIsShort); }
 async function mlDelGame(videoId,id){
