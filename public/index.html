@@ -1,12 +1,39 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
+<script>
+/* V2.9.21：Render 重啟或喚醒時會回 502/503/504 的 HTML 頁，前端改為自動重試 3 次；仍拿到 HTML 時顯示看得懂的原因 */
+(function(){
+  const of=window.fetch.bind(window);
+  const isApi=u=>{try{return new URL(typeof u==='string'?u:u.url,location.href).pathname.startsWith('/api/');}catch(e){return false;}};
+  window.fetch=async function(u,o){
+    if(!isApi(u)) return of(u,o);
+    let r;
+    for(let i=0;i<4;i++){
+      try{ r=await of(u,o); }catch(e){ if(i===3) throw new Error('連不到伺服器（'+e.message+'），請稍後再試'); await new Promise(z=>setTimeout(z,2500*(i+1))); continue; }
+      if(![502,503,504].includes(r.status)) break;
+      if(i<3) await new Promise(z=>setTimeout(z,2500*(i+1)));
+    }
+    return r;
+  };
+  const oj=Response.prototype.json;
+  Response.prototype.json=async function(){
+    const t=await this.clone().text();
+    try{ return JSON.parse(t); }
+    catch(e){
+      if(/^\s*</.test(t)) throw new Error(this.status>=500?('伺服器暫時無法回應（HTTP '+this.status+'，Render 可能正在重啟或喚醒），請等 30 秒再按一次'):('伺服器回了網頁而不是資料（HTTP '+this.status+'），可能是後端還沒部署到新版，請稍後重新整理'));
+      throw e;
+    }
+  };
+})();
+</script>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#8B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="象棋開局">
-<title>象棋小棋聖 V2.9.20 ｜ 象棋開局譜</title>
+<title>象棋小棋聖 V2.9.21 ｜ 象棋開局譜</title>
 <style>
 
 :root{
@@ -284,7 +311,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 <meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
-<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.20</span> <span id="xq-version-status">●</span></div>
+<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.21</span> <span id="xq-version-status">●</span></div>
 <script>
 (async()=>{try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();const el=document.getElementById('xq-version-status');if(el)el.textContent=d.ok?'● V'+d.version:'● OFFLINE';}catch(e){}})();
 </script>
