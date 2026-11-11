@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.21';
-const DISPLAY_VERSION = 'V2.9.21';
+const APP_VERSION = '2.9.22';
+const DISPLAY_VERSION = 'V2.9.22';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -1385,7 +1385,7 @@ app.post('/api/dpxq/import', async (q, s) => {
 
 app.get('/api/opening/classify', (q, s) => s.json({ opening: classifyOpening(String(q.query.moves || '').split(/\s+/)) }));
 
-// V2.9.21：/api 找不到路由或程式出錯時一律回 JSON，不再回首頁 HTML（避免前端顯示 Unexpected token '<'）
+// V2.9.22：/api 找不到路由或程式出錯時一律回 JSON，不再回首頁 HTML（避免前端顯示 Unexpected token '<'）
 app.use('/api', (req, res) => res.status(404).json({ error: '找不到 API：' + req.method + ' ' + req.originalUrl }));
 app.use((err, req, res, next) => {
   console.error('[api error]', req.method, req.originalUrl, err && err.stack || err);

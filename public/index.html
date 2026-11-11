@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
 <script>
-/* V2.9.21：Render 重啟或喚醒時會回 502/503/504 的 HTML 頁，前端改為自動重試 3 次；仍拿到 HTML 時顯示看得懂的原因 */
+/* V2.9.22：Render 重啟或喚醒時會回 502/503/504 的 HTML 頁，前端改為自動重試 3 次；仍拿到 HTML 時顯示看得懂的原因 */
 (function(){
   const of=window.fetch.bind(window);
   const isApi=u=>{try{return new URL(typeof u==='string'?u:u.url,location.href).pathname.startsWith('/api/');}catch(e){return false;}};
@@ -33,7 +33,7 @@
 <meta name="theme-color" content="#8B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="象棋開局">
-<title>象棋小棋聖 V2.9.21 ｜ 象棋開局譜</title>
+<title>象棋小棋聖 V2.9.22 ｜ 象棋開局譜</title>
 <style>
 
 :root{
@@ -311,7 +311,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 <meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
-<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.21</span> <span id="xq-version-status">●</span></div>
+<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.22</span> <span id="xq-version-status">●</span></div>
 <script>
 (async()=>{try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();const el=document.getElementById('xq-version-status');if(el)el.textContent=d.ok?'● V'+d.version:'● OFFLINE';}catch(e){}})();
 </script>
@@ -460,6 +460,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
             <button type="button" class="ml-g" onclick="mlQueueAll(true)" title="把目前列表（依篩選與搜尋）全部勾選">☑ 目前列表全選</button>
             <button type="button" class="ml-g" onclick="mlQueueAll(false)">清空勾選</button>
             <button type="button" class="ml-g" onclick="mlMultiOpen()" title="一次勾選多個清單的未覆盤影片">📋 多清單勾選</button>
+            <a class="ml-g" href="/ipad-scan.html" style="text-decoration:none" title="在 iPad／手機瀏覽器直接辨識影片檔（含 FB Reels）">📱 iPad 辨識影片檔</a>
             <button type="button" class="ml-g" onclick="mlRedoAll()" title="目前列表裡 20 步內的棋譜全部刪除並重新辨識">🔁 短棋譜全部重辨</button>
             <span id="mlQall" class="ml-qhint"></span>
             <span class="ml-qhint">勾好後在電腦執行影片覆盤，選「Q」就只辨識勾選的影片</span>

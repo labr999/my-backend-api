@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-TW"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>影片棋譜辨識（iPad 版）｜象棋小棋聖</title>
+<style>
+body{margin:0;background:#efe2c6;color:#2a1b10;font-family:-apple-system,system-ui,"Noto Sans TC",sans-serif}
+header{background:#8b1a1a;color:#fff;padding:14px 16px;display:flex;gap:12px;align-items:center}
+header a{color:#fff}
+main{max-width:980px;margin:auto;padding:12px}
+.card{background:#fff;border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 1px 4px #0001}
+h2{font-size:1.05rem;margin:0 0 10px;color:#8b1a1a}
+label{display:inline-flex;gap:6px;align-items:center;margin:4px 12px 4px 0}
+input[type=number],input[type=text],select{padding:8px;border:1px solid #cdbb9f;border-radius:8px;font:inherit}
+input[type=number]{width:70px}
+button{padding:11px 16px;border-radius:10px;border:none;background:#8b1a1a;color:#fff;font:600 1rem inherit;cursor:pointer}
+button.sec{background:#c9a14a}
+button:disabled{opacity:.5}
+.hint{font-size:.85rem;color:#76675b;line-height:1.5}
+.bar{height:10px;background:#eee;border-radius:6px;overflow:hidden;margin:8px 0}
+.bar>div{height:100%;width:0;background:#8b1a1a;transition:width .2s}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start}
+#view{max-width:100%;width:420px;border-radius:10px;background:#000}
+.mini{display:grid;grid-template-columns:repeat(9,22px);grid-template-rows:repeat(10,22px);background:#e8d5a8;border:4px solid #5a3a22;border-radius:4px}
+.mini span{display:flex;align-items:center;justify-content:center;font:700 14px/1 sans-serif}
+.r{color:#b52a2a}.b{color:#222}.x{color:#999}
+.moves{font-size:.95rem;line-height:1.7;word-break:break-all}
+.game{border-top:1px solid #eee;padding:10px 0}
+.ok{color:#2e7d32}.err{color:#c62828}
+#log{font:12px/1.5 ui-monospace,monospace;color:#555;max-height:160px;overflow:auto;white-space:pre-wrap}
+</style>
+</head><body>
+<header>♟ <b>影片棋譜辨識（iPad 版）</b><span style="opacity:.8">V1.0</span><a href="/" style="margin-left:auto">← 小棋聖首頁</a></header>
+<main>
+<div class="card">
+  <h2>1. 選影片</h2>
+  <input id="file" type="file" accept="video/*,.mp4,.mov,.webm" multiple>
+  <div class="hint">可選相簿或「檔案」裡的影片，一次可選多支；橫式 YouTube 下載檔、直式 FB Reels（先存到相簿或用螢幕錄影）都可以。整個辨識都在這台 iPad 上進行，影片不會上傳。</div>
+</div>
+<div class="card">
+  <h2>2. 設定</h2>
+  <label>每 <input id="step" type="number" value="1" min="0.5" max="5" step="0.5"> 秒看一次</label>
+  <label>從第 <input id="from" type="number" value="0" min="0"> 秒</label>
+  <label>到第 <input id="to" type="number" value="0" min="0"> 秒（0＝到結尾）</label><br>
+  <label><input id="upload" type="checkbox" checked> 辨識完上傳到小棋聖棋譜倉庫</label>
+  <label>標題 <input id="title" type="text" placeholder="預設用檔名" style="width:260px"></label>
+  <div class="hint">第一次使用會下載辨識模型約 40 MB（之後存在 iPad 裡）。辨識時請讓螢幕保持亮著、不要切到別的 App。</div>
+  <div style="margin-top:10px"><button id="go" disabled>開始辨識</button> <button id="stop" class="sec" disabled>停止</button></div>
+  <div class="bar"><div id="pbar"></div></div>
+  <div id="status" class="hint">載入程式中…</div>
+</div>
+<div class="card">
+  <h2>3. 即時畫面</h2>
+  <div class="row">
+    <canvas id="view"></canvas>
+    <div><div id="mini" class="mini"></div><div class="hint" id="side" style="margin-top:6px"></div></div>
+    <div style="flex:1;min-width:220px"><div class="hint">目前這盤</div><div id="curMoves" class="moves"></div></div>
+  </div>
+</div>
+<div class="card"><h2>4. 結果</h2><div id="results" class="hint">還沒有結果</div></div>
+<div class="card"><h2>紀錄</h2><div id="log"></div></div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
+<script src="/xqrecog.js?v=1.0"></script>
+<script src="/xqgame.js?v=1.0"></script>
+<script>
+const VERSION = '1.0';
+const HF = 'https://huggingface.co/spaces/yolo12138/Chinese_Chess_Recognition/resolve/4bcaf91777effa645040ee76d008d45c2ffc03f3/onnx/';
+const MODELS = { pose: HF + 'pose/4_v6-0301.onnx', cls: HF + 'layout_recognition/nano_v3-0319.onnx' };
+const NAME = { K:'帥',A:'仕',B:'相',N:'馬',R:'車',C:'炮',P:'兵',k:'將',a:'士',b:'象',n:'馬',r:'車',c:'砲',p:'卒' };
+const $ = id => document.getElementById(id);
+let bm = null, stopFlag = false;
+const log = m => { const el = $('log'); el.textContent += m + '\n'; el.scrollTop = el.scrollHeight; };
+const status = m => { $('status').textContent = m; };
+
+async function fetchModel(url, label) {
+  let cache = null; try { cache = await caches.open('xq-models-v1'); } catch (e) {}
+  if (cache) { const hit = await cache.match(url); if (hit) return new Uint8Array(await hit.arrayBuffer()); }
+  const r = await fetch(url); if (!r.ok) throw new Error(label + ' 下載失敗 ' + r.status);
+  const total = +r.headers.get('content-length') || 0, reader = r.body.getReader(), parts = []; let got = 0;
+  for (;;) { const { done, value } = await reader.read(); if (done) break; parts.push(value); got += value.length;
+    status('下載辨識模型（' + label + '）' + (total ? Math.round(got / total * 100) + '%' : Math.round(got / 1e6) + ' MB')); }
+  const buf = new Uint8Array(got); let o = 0; for (const p of parts) { buf.set(p, o); o += p.length; }
+  if (cache) try { await cache.put(url, new Response(buf)); } catch (e) {}
+  return buf;
+}
+async function loadModel() {
+  ort.env.wasm.numThreads = 1;
+  const pose = await ort.InferenceSession.create(await fetchModel(MODELS.pose, '1/2'), { executionProviders: ['wasm'] });
+  const cls = await ort.InferenceSession.create(await fetchModel(MODELS.cls, '2/2'), { executionProviders: ['wasm'] });
+  bm = new XQRecog.BoardModel(ort, pose, cls);
+}
+function drawMini(rows) {
+  $('mini').innerHTML = rows.map(s => Array.from(s).map(ch => ch === '.' ? '<span></span>' : ch === 'x' ? '<span class="x">?</span>' : '<span class="' + (ch === ch.toUpperCase() ? 'r' : 'b') + '">' + NAME[ch] + '</span>').join('')).join('');
+}
+function seek(v, t) { return new Promise((res, rej) => { const to = setTimeout(() => rej(new Error('跳轉逾時')), 15000); v.onseeked = () => { clearTimeout(to); res(); }; v.currentTime = t; }); }
+function loadVideo(file) {
+  return new Promise((res, rej) => { const v = document.createElement('video'); v.muted = true; v.playsInline = true; v.preload = 'auto';
+    v.onloadedmetadata = () => res(v); v.onerror = () => rej(new Error('這個影片格式無法讀取')); v.src = URL.createObjectURL(file); });
+}
+function thumbDiff(a, b) { if (!a || !b) return 999; let s = 0; for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]); return s / a.length; }
+
+async function scanFile(file, idx, n) {
+  const v = await loadVideo(file);
+  const dur = v.duration || 0, step = Math.max(0.5, +$('step').value || 1);
+  const t0 = Math.max(0, +$('from').value || 0), t1 = (+$('to').value > 0) ? Math.min(dur, +$('to').value) : dur;
+  const W0 = v.videoWidth, H0 = v.videoHeight, sc = Math.min(1, 960 / Math.max(W0, H0));
+  const cv = $('view'), W = Math.round(W0 * sc), H = Math.round(H0 * sc); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  const tc = document.createElement('canvas'); tc.width = 48; tc.height = 27; const tctx = tc.getContext('2d', { willReadFrequently: true });
+  const portrait = H0 > W0;
+  log('▶ ' + file.name + '（' + W0 + '×' + H0 + '，' + Math.round(dur) + ' 秒' + (portrait ? '，直式' : '') + '）');
+  const T = new XQGame.Tracker();
+  let kp = null, kpAge = 99, lastThumb = null, lastRows = null, host = null, used = 0, reused = 0;
+  const t_start = performance.now();
+  for (let t = t0; t <= t1 && !stopFlag; t += step) {
+    await seek(v, Math.min(t, Math.max(0, dur - 0.05)));
+    ctx.drawImage(v, 0, 0, W, H);
+    tctx.drawImage(cv, 0, 0, 48, 27);
+    const th = tctx.getImageData(0, 0, 48, 27).data;
+    let rows;
+    if (lastRows && thumbDiff(th, lastThumb) < 1.5) { rows = lastRows; reused++; }
+    else {
+      const img = ctx.getImageData(0, 0, W, H);
+      if (!kp || kpAge >= 8) { kp = portrait ? await bm.keypointsRefined(img) : await bm.keypoints(img); kpAge = 0; }
+      kpAge++;
+      const r = await bm.read(img, kp); rows = r.rows; used++;
+      if (rows.join('').split('x').length - 1 > 20) kpAge = 99; // 畫面大變（切鏡頭）就重找棋盤
+      lastRows = rows; lastThumb = th;
+      if (host === null && XQGame.mismatch(rows, XQGame.fromFen(XQGame.START_FEN)) <= 3) {
+        const ay = (kp.kp[0][1] + kp.kp[1][1]) / 2, jy = (kp.kp[2][1] + kp.kp[3][1]) / 2;
+        host = ay > jy ? '黑方' : '紅方';
+        $('side').textContent = '畫面下方（主播）執' + host;
+      }
+      drawMini(rows);
+    }
+    const ev = T.feed(rows, t);
+    if (ev && ev !== 'move') log('  ' + Math.round(t) + ' 秒：' + ({ start: '開局', setup: '擺局（從中局開始）', newgame: '新的一盤', takeback: '退回一步', 'move-resync': '同一方連走' }[ev] || ev));
+    if (T.cur) $('curMoves').textContent = T.cur.moves.map((m, i) => (i % 2 === 0 ? (i / 2 + 1) + '. ' : '') + m.cn).join(' ');
+    const p = ((idx + (t - t0) / Math.max(1, t1 - t0)) / n) * 100; $('pbar').style.width = p.toFixed(1) + '%';
+    const el = (performance.now() - t_start) / 1000, frac = (t - t0) / Math.max(1, t1 - t0);
+    status('第 ' + (idx + 1) + '/' + n + ' 支：' + Math.round(t) + ' / ' + Math.round(t1) + ' 秒' + (frac > 0.02 ? '，約剩 ' + Math.max(1, Math.round(el / frac * (1 - frac) / 60)) + ' 分鐘' : ''));
+  }
+  URL.revokeObjectURL(v.src);
+  log('  模型判讀 ' + used + ' 次、畫面沒變略過 ' + reused + ' 次');
+  return { games: T.games(6), host: host || '紅方', takebacks: T.takebacks };
+}
+
+async function uploadGame(file, g, gi, bno, host, takebacks) {
+  const stem = file.name.replace(/\.[^.]+$/, '');
+  const title = ($('title').value.trim() || stem);
+  const res = { w: '紅勝', b: '黑勝' }[g.win] || '未知';
+  const payload = {
+    red: '影片紅方', black: '影片黑方', result: res,
+    event: title + (bno ? '（分支' + bno + '）' : (gi ? '（第' + (gi + 1) + '盤）' : '')),
+    date: new Date().toISOString().slice(0, 10),
+    tokens: g.moves, moves: g.moves, exactMoves: g.setup ? g.exact : [],
+    source: 'video-scan', format: 'ipad-scan ' + VERSION, sourceUrl: '', detailUrl: '',
+    fen: g.fen, validation: g.reason,
+    rawExport: JSON.stringify(Object.assign({ videoId: 'ipad-' + stem.slice(0, 60), file: file.name, moveTimes: g.times, game: gi, host, takebacks, via: 'ipad-scan' }, bno ? { branch: bno } : {}, g.setup ? { startFen: g.startFen } : {}))
+  };
+  for (let k = 0; k < 3; k++) {
+    try {
+      const r = await fetch('/api/games', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const ct = r.headers.get('content-type') || '';
+      if (ct.includes('json')) { const d = await r.json(); if (r.ok) return (d.game || {}).id; throw new Error(d.error || r.status); }
+      throw new Error('伺服器忙碌（' + r.status + '）');
+    } catch (e) { if (k === 2) throw e; await new Promise(s => setTimeout(s, 4000 * (k + 1))); }
+  }
+}
+
+$('go').onclick = async () => {
+  const files = Array.from($('file').files || []);
+  if (!files.length) { alert('請先選影片'); return; }
+  stopFlag = false; $('go').disabled = true; $('stop').disabled = false; $('results').innerHTML = '';
+  try {
+    if (!bm) { status('載入辨識模型…'); await loadModel(); log('辨識模型已載入'); }
+    for (let i = 0; i < files.length && !stopFlag; i++) {
+      const f = files[i];
+      let out;
+      try { out = await scanFile(f, i, files.length); }
+      catch (e) { log('  ✗ ' + e.message); $('results').insertAdjacentHTML('beforeend', '<div class="game"><b>' + f.name + '</b>：<span class="err">' + e.message + '</span></div>'); continue; }
+      if (!out.games.length) { $('results').insertAdjacentHTML('beforeend', '<div class="game"><b>' + f.name + '</b>：<span class="err">沒有辨識到完整棋局（少於 6 步）</span></div>'); continue; }
+      let main = -1, bno = 0, gi = 0;
+      for (const g of out.games) {
+        let tag;
+        if (g.setup && main >= 0) { bno++; tag = '分支' + bno; } else { tag = '第' + (gi + 1) + '盤'; if (!g.setup) main = gi; }
+        let up = '';
+        if ($('upload').checked) {
+          try { const id = await uploadGame(f, g, gi, g.setup && main >= 0 ? bno : 0, out.host, out.takebacks); up = ' <span class="ok">↑ 已上傳（編號 ' + id + '）</span>'; }
+          catch (e) { up = ' <span class="err">上傳失敗：' + e.message + '</span>'; }
+        }
+        $('results').insertAdjacentHTML('beforeend', '<div class="game"><b>' + f.name + '｜' + tag + '</b>（' + g.moves.length + ' 步，' + ({ w: '紅勝', b: '黑勝' }[g.win] || '勝負未判定') + '，主播執' + out.host + '）' + up + '<div class="moves">' + g.moves.map((m, k) => (k % 2 === 0 ? (k / 2 + 1) + '. ' : '') + m).join(' ') + '</div></div>');
+        if (!g.setup || main < 0) gi++;
+      }
+    }
+    status(stopFlag ? '已停止' : '全部完成'); $('pbar').style.width = stopFlag ? $('pbar').style.width : '100%';
+  } catch (e) { status('失敗：' + e.message); log('✗ ' + e.message); }
+  $('go').disabled = false; $('stop').disabled = true;
+};
+$('stop').onclick = () => { stopFlag = true; status('停止中…（這張畫面判讀完就停）'); };
+$('file').onchange = () => { const n = ($('file').files || []).length; status(n ? '已選 ' + n + ' 支影片，按「開始辨識」' : '請選影片'); };
+(function init() {
+  if (typeof ort === 'undefined') { status('辨識程式庫載入失敗，請檢查網路後重新整理'); return; }
+  $('go').disabled = false; status('請選影片');
+})();
+</script>
+</body></html>
