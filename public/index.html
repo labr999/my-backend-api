@@ -33,7 +33,7 @@
 <meta name="theme-color" content="#8B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="象棋開局">
-<title>象棋小棋聖 V2.9.23 ｜ 象棋開局譜</title>
+<title>象棋小棋聖 V2.9.24 ｜ 象棋開局譜</title>
 <style>
 
 :root{
@@ -260,6 +260,22 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 /* ===== V2.9.16 我的清單 ===== */
 #myListCard{display:none}
 #myListCard.open{display:block}
+#myListCard.open.cp-hide{display:none}
+#catPlayCard{display:none}
+#catPlayCard.show{display:block}
+.cp-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.cp-head h3{margin:0;flex:1;min-width:140px;font-size:.95rem}
+.cp-btn{padding:6px 10px;border:none;border-radius:8px;font-size:.76rem;font-weight:700;cursor:pointer;background:var(--surface-variant);color:var(--primary);white-space:nowrap}
+.cp-btn.main{background:var(--primary);color:#fff}
+.cp-list{max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+.cp-it{display:flex;gap:8px;align-items:center;padding:8px 10px;border-radius:10px;cursor:pointer;background:var(--surface-variant);font-size:.8rem;line-height:1.4}
+.cp-it .n{color:var(--on-surface-variant);min-width:2.2em;text-align:right}
+.cp-it .t{flex:1}
+.cp-it .s{color:var(--on-surface-variant);font-size:.72rem;white-space:nowrap}
+.cp-it.cur{background:var(--primary);color:#fff}
+.cp-it.cur .n,.cp-it.cur .s{color:#fff}
+#btnNextGame{display:none;margin:8px auto 0;padding:10px 18px;border:none;border-radius:12px;background:var(--primary);color:#fff;font-weight:700;font-size:.9rem;cursor:pointer}
+#btnNextGame.show{display:block}
 .ml-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
 .ml-head select{padding:7px 10px;border-radius:10px;border:1px solid var(--outline-variant);font:inherit;background:var(--surface);max-width:100%}
 .ml-head .ml-count{font-size:.8rem;color:var(--on-surface-variant)}
@@ -311,7 +327,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 <meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
-<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.23</span> <span id="xq-version-status">●</span></div>
+<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.24</span> <span id="xq-version-status">●</span></div>
 <script>
 (async()=>{try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();const el=document.getElementById('xq-version-status');if(el)el.textContent=d.ok?'● V'+d.version:'● OFFLINE';}catch(e){}})();
 </script>
@@ -419,6 +435,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
             </div>
           </div>
 
+          <button type="button" id="btnNextGame" onclick="cpNext(true)">⏭ 下一盤</button>
           <!-- 即時記譜面板（記譜中才顯示） -->
           <div class="rec-live" id="recLive">
             <div class="rl-top"><span class="dot"></span><b id="rlMode">記譜中</b><span id="rlCount">0 步</span></div>
@@ -435,6 +452,16 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 
       <!-- 右欄：著法記錄區、當前局勢分析、開局分類與說明 -->
       <div class="home-right-col">
+        <!-- V2.9.24：從開局分類播放時，右方顯示同分類全部棋譜，可按下一盤 -->
+        <div class="card" id="catPlayCard">
+          <div class="cp-head">
+            <h3 id="cpTitle">📂 分類棋譜</h3>
+            <button type="button" class="cp-btn main" onclick="cpNext()">⏭ 下一盤</button>
+            <label style="font-size:.74rem;display:inline-flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="cpAuto"> 播完自動下一盤</label>
+            <button type="button" class="cp-btn" onclick="cpClose()" title="關閉分類清單，回到我的清單">✕</button>
+          </div>
+          <div class="cp-list" id="cpList"></div>
+        </div>
         <!-- 0. 我的清單（V2.9.16）：影片覆盤上傳的播放清單 -->
         <div class="card" id="myListCard">
           <div class="ml-head">
@@ -2473,7 +2500,7 @@ function ensureBoardShell(){
   svgEl.__pieceLayer=svgEl.querySelector('#piece-layer');
 }
 
-function renderBoard(){
+function renderBoard(){ try{ if(typeof cpEndCheck==='function') setTimeout(cpEndCheck,0); }catch(e){}
   const arr=recording?recordedMoves:currentMoves;
   const idx=recording?recordedMoves.length:currentIndex;
   const pieces=computeBoardAt(idx,arr);
@@ -2714,7 +2741,7 @@ function openingBookSearch(q){
       '<br><span class="sr-why">'+r.reason+'　棋譜 '+scoreCount+'／影片 '+vidCount+statTxt+'</span>';
     d.addEventListener('click',()=>{
       curSide=r.side;curCat=r.cat;
-      loadLine(r.side,r.cat,0);gotoTab('home');
+      loadLine(r.side,r.cat,0);gotoTab('home');cpOpen();
     });
     const a=d.querySelector('.sr-yt');if(a)a.addEventListener('click',ev=>ev.stopPropagation());
     box.appendChild(d);
@@ -2899,9 +2926,9 @@ function buildLineList(){
     `;
 
     // 點擊整張卡片或播放按鈕皆載入原棋盤
-    it.addEventListener('click',()=>{loadLine(curSide,curCat,i);gotoTab('home');});
+    it.addEventListener('click',()=>{loadLine(curSide,curCat,i);gotoTab('home');cpOpen();});
     const pBtn=it.querySelector('.btn-play-line');
-    if(pBtn)pBtn.addEventListener('click',e=>{e.stopPropagation();loadLine(curSide,curCat,i);gotoTab('home');});
+    if(pBtn)pBtn.addEventListener('click',e=>{e.stopPropagation();loadLine(curSide,curCat,i);gotoTab('home');cpOpen();});
     const vBtn=it.querySelector('.btn-vid-line');
     if(vBtn)vBtn.addEventListener('click',e=>{e.stopPropagation();});
     const rBtn=it.querySelector('.btn-reclass-line');
@@ -2933,6 +2960,7 @@ function loadLine(side,cat,idx){
   }
   curSide=side;curCat=cat;curIdx=idx;
   const entry=DATA[side][cat];const line=entry.lines[idx];
+  try{ if(CP.active) cpRender(); }catch(e){}
   currentMoves=line.moves||[];currentIndex=0;currentStartPieces=null;
   flipBoard=(side==='後手');
   document.getElementById('boardTitle').textContent=line.name;
@@ -2969,6 +2997,51 @@ function loadLine(side,cat,idx){
   renderBoard();
 }
 
+/* ===== V2.9.24：分類連播 ===== */
+const CP={active:false,side:null,cat:null};
+function cpPlayable(){ const e=DATA[CP.side]&&DATA[CP.side][CP.cat]; return e?e.lines.map((l,i)=>[l,i]).filter(([l])=>l.moves&&l.moves.length):[]; }
+function cpOpen(){
+  CP.active=true; CP.side=curSide; CP.cat=curCat;
+  document.getElementById('catPlayCard').classList.add('show');
+  document.getElementById('myListCard').classList.add('cp-hide');
+  cpRender();
+  try{ const c=document.querySelector('#cpList .cur'); if(c) c.scrollIntoView({block:'nearest'}); }catch(e){}
+}
+function cpClose(silent){
+  if(!CP.active && silent) return;
+  CP.active=false;
+  document.getElementById('catPlayCard').classList.remove('show');
+  document.getElementById('myListCard').classList.remove('cp-hide');
+  cpEndCheck();
+}
+function cpRender(){
+  if(curSide!==CP.side||curCat!==CP.cat){ CP.side=curSide; CP.cat=curCat; }
+  const list=cpPlayable();
+  const k=list.findIndex(([,i])=>i===curIdx);
+  document.getElementById('cpTitle').textContent='📂 '+CP.side+'・'+CP.cat+'（'+(k>=0?(k+1)+'／':'')+list.length+' 盤）';
+  document.getElementById('cpList').innerHTML=list.length?list.map(([l,i],n)=>'<div class="cp-it'+(i===curIdx?' cur':'')+'" onclick="cpGo('+i+')"><span class="n">'+(n+1)+'</span><span class="t">'+mlEsc(l.name)+'</span><span class="s">'+l.moves.length+' 步</span></div>').join(''):'<div class="ml-empty">此分類沒有可播放的棋譜</div>';
+  const c=document.querySelector('#cpList .cur'); if(c){ const box=document.getElementById('cpList'); if(c.offsetTop<box.scrollTop||c.offsetTop>box.scrollTop+box.clientHeight-30) box.scrollTop=c.offsetTop-box.clientHeight/3; }
+}
+function cpGo(i){ if(!CP.active) return; loadLine(CP.side,CP.cat,i); cpRender(); cpEndCheck(); }
+function cpNext(fromBoard){
+  if(!CP.active){ return; }
+  const list=cpPlayable(); const k=list.findIndex(([,i])=>i===curIdx);
+  if(k+1>=list.length){ toast('已經是這個分類的最後一盤'); return; }
+  cpGo(list[k+1][1]);
+  if(fromBoard||document.getElementById('cpAuto').checked){ setTimeout(()=>{ const b=document.getElementById('btnPlay'); if(b&&!b.classList.contains('playing')) b.click(); },300); }
+}
+let cpAutoTimer=null;
+function cpEndCheck(){
+  const btn=document.getElementById('btnNextGame'); if(!btn) return;
+  const atEnd=CP.active && currentMoves && currentMoves.length>0 && currentIndex>=currentMoves.length && !recording;
+  const list=CP.active?cpPlayable():[]; const k=list.findIndex(([,i])=>i===curIdx);
+  const hasNext=atEnd && k>=0 && k+1<list.length;
+  btn.classList.toggle('show', hasNext);
+  if(hasNext){ btn.textContent='⏭ 下一盤：'+list[k+1][0].name; }
+  if(hasNext && document.getElementById('cpAuto').checked && !cpAutoTimer){
+    cpAutoTimer=setTimeout(()=>{ cpAutoTimer=null; if(CP.active && currentIndex>=currentMoves.length) cpNext(true); },2500);
+  }
+}
 /* ============ 播放控制 ============ */
 function updatePlayBtn(isPlaying){
   const sym=document.getElementById('btnPlaySym');
@@ -3555,7 +3628,7 @@ document.getElementById('btnSearchOpen').addEventListener('click',()=>{
     else if(vl){url=vl.videoUrl;lbl='▶ 影片';}
     const d=document.createElement('div');d.className='sr-item';
     d.innerHTML=`<span class="sr-cat">${r.side}｜${r.cat}</span>${url?` <a class="sr-yt" href="${url}" target="_blank">${lbl}</a>`:''}<br><span class="sr-why">依據：${r.why}（點此跳至分類）</span>`;
-    d.addEventListener('click',()=>{loadLine(r.side,r.cat,0);gotoTab('home');});
+    d.addEventListener('click',()=>{loadLine(r.side,r.cat,0);gotoTab('home');cpOpen();});
     const a=d.querySelector('.sr-yt');if(a)a.addEventListener('click',ev=>ev.stopPropagation());
     box.appendChild(d);
   });
@@ -4177,6 +4250,7 @@ async function playMasterGame(id, startFen) {
     if (recording) stopRecording();
     recording = false;
     recordedMoves = [];
+    try{ cpClose(true); }catch(e){}
     currentMoves = moves;
     currentIndex = 0;
     currentStartPieces = startFen ? fenToPieces(startFen) : null;
@@ -4458,6 +4532,7 @@ function toggleMyList(force){
   const card=document.getElementById('myListCard'), btn=document.getElementById('myListNavBtn');
   const open = force!=null ? force : !card.classList.contains('open');
   card.classList.toggle('open', open); btn.classList.toggle('on', open);
+  if(open){ try{ cpClose(true); }catch(e){} }
   try{localStorage.setItem('xqMyListOpen', open?'1':'0');}catch(e){}
   if(open){ try{ if(typeof gotoTab==='function') gotoTab('home'); }catch(e){} if(!ML.loaded) mlInit(); window.scrollTo({top:0,behavior:'smooth'}); }
 }
