@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.22';
-const DISPLAY_VERSION = 'V2.9.22';
+const APP_VERSION = '2.9.23';
+const DISPLAY_VERSION = 'V2.9.23';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -847,7 +847,8 @@ function upsertPlaylist(b) {
     videoId: String(it.videoId).slice(0, 32), title: String(it.title || it.videoId).slice(0, 200), index: i + 1,
     status: it.status != null ? String(it.status).slice(0, 40) : ((old[it.videoId] && old[it.videoId].status) || ''),
     note: (old[it.videoId] && old[it.videoId].note) || '', queued: !!(old[it.videoId] && old[it.videoId].queued), redo: !!(old[it.videoId] && old[it.videoId].redo),
-    time: it.time ? String(it.time).slice(0, 40) : ((old[it.videoId] && old[it.videoId].time) || '')
+    time: it.time ? String(it.time).slice(0, 40) : ((old[it.videoId] && old[it.videoId].time) || ''),
+    ...((old[it.videoId] && old[it.videoId].url) ? { url: old[it.videoId].url, site: old[it.videoId].site || '', plTitle: old[it.videoId].plTitle || '' } : {})
   }));
   const rec = { id, title: String(b.title || id).slice(0, 120), url: String(b.url || '').slice(0, 300), items, updated_at: new Date().toISOString() };
   if (pl) Object.assign(pl, rec); else db.playlists.push(rec);
@@ -966,10 +967,50 @@ app.post('/api/playlists/:id/queue', (q, s) => {
   if (n) save();
   s.json({ ok: true, changed: n, queued: (pl.items || []).filter(x => x.queued).length });
 });
+/* V2.9.23：匯入棋譜貼影片網址（YouTube、FB Reels、IG、TikTok、Bilibili…）→ 放進「匯入影片」清單並勾選，影片覆盤按 Q 下載辨識 */
+const IMPORT_PL = 'import-videos';
+function videoKey(raw) {
+  let u; try { u = new URL(String(raw).trim()); } catch { return null; }
+  if (!/^https?:$/.test(u.protocol)) return null;
+  const h = u.hostname.replace(/^www\.|^m\.|^mobile\./, '');
+  let m;
+  if (h === 'youtu.be' && (m = u.pathname.match(/^\/([\w-]{11})/))) return { id: m[1], url: 'https://www.youtube.com/watch?v=' + m[1], site: 'YouTube' };
+  if (/(^|\.)youtube\.com$/.test(h)) {
+    const v = u.searchParams.get('v') || ((m = u.pathname.match(/^\/(?:shorts|live|embed)\/([\w-]{11})/)) && m[1]);
+    if (v && /^[\w-]{11}$/.test(v)) return { id: v, url: 'https://www.youtube.com/watch?v=' + v, site: 'YouTube' };
+    return null;
+  }
+  const site = /facebook\.com$|fb\.watch$/.test(h) ? 'FB' : /instagram\.com$/.test(h) ? 'IG' : /tiktok\.com$/.test(h) ? 'TikTok' : /bilibili\.com$|b23\.tv$/.test(h) ? 'Bilibili' : h;
+  const clean = u.origin.replace(/\/\/(m|mobile)\./, '//www.') + u.pathname.replace(/\/+$/, '') + (u.searchParams.get('v') ? '?v=' + u.searchParams.get('v') : '');
+  const hash = require('crypto').createHash('sha1').update(clean).digest('hex').slice(0, 10);
+  const pre = { FB: 'fb', IG: 'ig', TikTok: 'tt', Bilibili: 'bili' }[site] || 'web';
+  return { id: pre + '-' + hash, url: clean, site };
+}
+app.post('/api/video-import', (q, s) => {
+  const b = q.body || {};
+  const urls = (Array.isArray(b.urls) ? b.urls : String(b.url || '').split(/\s+/)).map(x => String(x).trim()).filter(Boolean).slice(0, 200);
+  if (!urls.length) return s.status(400).json({ error: '請貼影片網址' });
+  let pl = db.playlists.find(x => x.id === IMPORT_PL);
+  if (!pl) { pl = { id: IMPORT_PL, title: '匯入影片', url: '', items: [], updated_at: '' }; db.playlists.push(pl); }
+  const added = [], bad = [], again = [];
+  const idx = videoGamesIndex();
+  for (const raw of urls) {
+    const k = videoKey(raw);
+    if (!k) { bad.push(raw); continue; }
+    let it = pl.items.find(x => x.videoId === k.id);
+    if (it) { if (!it.queued) { it.queued = true; it.status = it.status || ''; } again.push({ videoId: k.id, done: !!idx[k.id] }); continue; }
+    it = { videoId: k.id, url: k.url, site: k.site, title: (String(b.title || '').trim().slice(0, 200)) || (k.site + ' 影片 ' + k.id), index: pl.items.length + 1, status: '', note: '', queued: true, redo: false, time: new Date().toISOString() };
+    if (/先手|後手|后手/.test(String(b.title || ''))) it.plTitle = String(b.title).trim().slice(0, 120); // 影片覆盤依標題分先後手
+    pl.items.push(it); added.push({ videoId: k.id, site: k.site, url: k.url });
+  }
+  pl.updated_at = new Date().toISOString();
+  if (added.length || again.length) save();
+  s.json({ ok: true, added, again, bad, queued: pl.items.filter(x => x.queued).length });
+});
 app.get('/api/queue', (q, s) => {
   const out = [];
   for (const pl of db.playlists) for (const it of pl.items || []) if (it.queued)
-    out.push({ playlistId: pl.id, playlistTitle: pl.title, videoId: it.videoId, title: it.title, index: it.index, status: it.status || '', redo: !!it.redo });
+    out.push({ playlistId: pl.id, playlistTitle: it.plTitle || pl.title, videoId: it.videoId, title: it.title, index: it.index, status: it.status || '', redo: !!it.redo, url: it.url || '' });
   s.json({ items: out });
 });
 app.delete('/api/playlists/:id', (q, s) => {
@@ -1385,7 +1426,7 @@ app.post('/api/dpxq/import', async (q, s) => {
 
 app.get('/api/opening/classify', (q, s) => s.json({ opening: classifyOpening(String(q.query.moves || '').split(/\s+/)) }));
 
-// V2.9.22：/api 找不到路由或程式出錯時一律回 JSON，不再回首頁 HTML（避免前端顯示 Unexpected token '<'）
+// V2.9.23：/api 找不到路由或程式出錯時一律回 JSON，不再回首頁 HTML（避免前端顯示 Unexpected token '<'）
 app.use('/api', (req, res) => res.status(404).json({ error: '找不到 API：' + req.method + ' ' + req.originalUrl }));
 app.use((err, req, res, next) => {
   console.error('[api error]', req.method, req.originalUrl, err && err.stack || err);

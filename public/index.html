@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
 <script>
-/* V2.9.22：Render 重啟或喚醒時會回 502/503/504 的 HTML 頁，前端改為自動重試 3 次；仍拿到 HTML 時顯示看得懂的原因 */
+/* V2.9.23：Render 重啟或喚醒時會回 502/503/504 的 HTML 頁，前端改為自動重試 3 次；仍拿到 HTML 時顯示看得懂的原因 */
 (function(){
   const of=window.fetch.bind(window);
   const isApi=u=>{try{return new URL(typeof u==='string'?u:u.url,location.href).pathname.startsWith('/api/');}catch(e){return false;}};
@@ -33,7 +33,7 @@
 <meta name="theme-color" content="#8B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="象棋開局">
-<title>象棋小棋聖 V2.9.22 ｜ 象棋開局譜</title>
+<title>象棋小棋聖 V2.9.23 ｜ 象棋開局譜</title>
 <style>
 
 :root{
@@ -311,7 +311,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 <meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
-<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.22</span> <span id="xq-version-status">●</span></div>
+<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.23</span> <span id="xq-version-status">●</span></div>
 <script>
 (async()=>{try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();const el=document.getElementById('xq-version-status');if(el)el.textContent=d.ok?'● V'+d.version:'● OFFLINE';}catch(e){}})();
 </script>
@@ -607,7 +607,18 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
           <div style="display:flex;gap:6px;margin-bottom:12px">
             <button id="impModeNormal" class="imp-mode active" style="flex:1;padding:9px;border:none;border-radius:10px;font-size:.82rem;font-weight:600;cursor:pointer;background:var(--primary);color:#fff">一般棋譜</button>
             <button id="impModeMaster" class="imp-mode" style="flex:1;padding:9px;border:none;border-radius:10px;font-size:.82rem;font-weight:600;cursor:pointer;background:var(--surface-variant);color:var(--on-surface-variant)">👑 大師對局</button>
+            <button id="impModeVideo" class="imp-mode" style="flex:1;padding:9px;border:none;border-radius:10px;font-size:.82rem;font-weight:600;cursor:pointer;background:var(--surface-variant);color:var(--on-surface-variant)">🎬 影片辨識</button>
           </div>
+          <div id="videoFields" style="display:none">
+            <textarea class="field" id="impVidUrls" rows="4" placeholder="貼影片網址，一行一支：YouTube（含 Shorts）、FB Reels、IG、TikTok、Bilibili 等"></textarea>
+            <input class="field" type="text" id="impVidTitle" placeholder="標題（選填；含「先手」「後手」會照著分類）">
+            <div class="btn-row"><button class="primary" id="btnVidQueue">🎬 排入辨識</button></div>
+            <div style="font-size:.74rem;color:var(--on-surface-variant);line-height:1.6;margin:6px 2px 10px">網址影片由電腦下載辨識：在電腦執行 run_video_scan.bat 按 <b>Q</b>。辨識完自動依先後手、開局分類上傳，出現在「我的清單 › 匯入影片」。FB／IG 需登入的影片，下載時借用電腦瀏覽器的登入。</div>
+            <div style="border-top:1px solid var(--outline-variant);padding-top:10px;font-size:.8rem;font-weight:600">本機影片檔（相簿、螢幕錄影、存下來的 Reels）</div>
+            <div class="btn-row"><a class="primary" href="/ipad-scan.html" style="display:block;text-align:center;padding:12px;border-radius:12px;background:var(--primary);color:#fff;text-decoration:none;font-weight:600">📱 在這台裝置直接辨識</a></div>
+            <div class="imp-msg" id="vidMsg"></div>
+          </div>
+          <div id="impTextFields">
           <div id="masterFields" style="display:none">
             <div style="display:flex;gap:8px">
               <input class="field" type="text" id="impRed" placeholder="紅方棋手" style="flex:1">
@@ -629,6 +640,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
             <button class="primary" id="btnDoImport">匯入並分類</button>
           </div>
           <div class="imp-msg" id="impMsg"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -3706,15 +3718,39 @@ document.getElementById('btnClearAll').addEventListener('click',()=>{
   toast('已清空全部棋譜');
 });
 let impMasterMode=false;
+function impSetMode(m){
+  const on='background:var(--primary);color:#fff', off='background:var(--surface-variant);color:var(--on-surface-variant)';
+  document.getElementById('impModeNormal').style.cssText='flex:1;padding:9px;border:none;border-radius:10px;font-size:.82rem;font-weight:600;cursor:pointer;'+(m==='normal'?on:off);
+  document.getElementById('impModeMaster').style.cssText='flex:1;padding:9px;border:none;border-radius:10px;font-size:.82rem;font-weight:600;cursor:pointer;'+(m==='master'?'background:var(--master);color:#fff':off);
+  document.getElementById('impModeVideo').style.cssText='flex:1;padding:9px;border:none;border-radius:10px;font-size:.82rem;font-weight:600;cursor:pointer;'+(m==='video'?on:off);
+  document.getElementById('videoFields').style.display=m==='video'?'block':'none';
+  document.getElementById('impTextFields').style.display=m==='video'?'none':'block';
+}
+document.getElementById('impModeVideo').addEventListener('click',()=>{ impMasterMode=false; impSetMode('video'); document.getElementById('importCard').querySelector('h3').textContent='🎬 影片辨識匯入'; });
+document.getElementById('btnVidQueue').addEventListener('click',async()=>{
+  const msg=document.getElementById('vidMsg'); msg.className='imp-msg';
+  const urls=document.getElementById('impVidUrls').value.split(/\s+/).map(x=>x.trim()).filter(Boolean);
+  if(!urls.length){ msg.textContent='請貼影片網址'; msg.classList.add('err'); return; }
+  msg.textContent='排入中…（伺服器睡著時要等約 1 分鐘）';
+  try{
+    const r=await fetch('/api/video-import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({urls,title:document.getElementById('impVidTitle').value.trim()})});
+    const ct=r.headers.get('content-type')||''; if(!ct.includes('json')) throw new Error('伺服器忙碌（'+r.status+'），請再按一次');
+    const d=await r.json(); if(!r.ok) throw new Error(d.error||r.status);
+    let t='✔ 新排入 '+d.added.length+' 支'+(d.again.length?'，'+d.again.length+' 支已在清單（'+d.again.filter(x=>x.done).length+' 支辨識過）':'')+'；目前待辨識 '+d.queued+' 支。到電腦執行 run_video_scan.bat 按 Q。';
+    if(d.bad.length) t+='\n✗ 看不懂的網址：'+d.bad.join('、');
+    msg.textContent=t; msg.classList.add(d.added.length||d.again.length?'ok':'err');
+    if(d.added.length||d.again.length) document.getElementById('impVidUrls').value='';
+  }catch(e){ msg.textContent='排入失敗：'+e.message; msg.classList.add('err'); }
+});
 document.getElementById('impModeNormal').addEventListener('click',()=>{
-  impMasterMode=false;
+  impMasterMode=false; impSetMode('normal');
   document.getElementById('impModeNormal').style.cssText='flex:1;padding:9px;border:none;border-radius:10px;font-size:.82rem;font-weight:600;cursor:pointer;background:var(--primary);color:#fff';
   document.getElementById('impModeMaster').style.cssText='flex:1;padding:9px;border:none;border-radius:10px;font-size:.82rem;font-weight:600;cursor:pointer;background:var(--surface-variant);color:var(--on-surface-variant)';
   document.getElementById('masterFields').style.display='none';
   document.getElementById('importCard').querySelector('h3').textContent='📋 匯入棋譜';
 });
 document.getElementById('impModeMaster').addEventListener('click',()=>{
-  impMasterMode=true;
+  impMasterMode=true; impSetMode('master');
   document.getElementById('impModeMaster').style.cssText='flex:1;padding:9px;border:none;border-radius:10px;font-size:.82rem;font-weight:600;cursor:pointer;background:var(--master);color:#fff';
   document.getElementById('impModeNormal').style.cssText='flex:1;padding:9px;border:none;border-radius:10px;font-size:.82rem;font-weight:600;cursor:pointer;background:var(--surface-variant);color:var(--on-surface-variant)';
   document.getElementById('masterFields').style.display='block';
@@ -4631,7 +4667,10 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('input',e=>{ if(e.target&&e.target.id==='mlQ'&&(ML.view==='list'||ML.view==='tags')) mlRender(); });
 function mlFindItem(videoId){ return [].concat(ML.data&&ML.data.items||[], ML.search&&ML.search.items||[]).find(x=>x.videoId===videoId); }
+function mlIsYt(v){ return /^[\w-]{11}$/.test(String(v||'')); }
+function mlVideoUrl(videoId){ const it=mlFindItem(videoId); return mlIsYt(videoId)?'https://www.youtube.com/watch?v='+encodeURIComponent(videoId):((it&&it.url)||''); }
 function mlEmbed(videoId, start){
+  if(!mlIsYt(videoId)){ const u=mlVideoUrl(videoId); document.getElementById('mlFrame').innerHTML='<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;background:#222;text-align:center;padding:12px">'+(u?'這支不是 YouTube 影片，無法內嵌播放<br><a style="color:#ffd27a" target="_blank" rel="noopener" href="'+mlEsc(u)+'">開啟原影片</a>':'本機影片辨識的棋譜（沒有線上影片）')+'</div>'; document.getElementById('mlVideo').classList.add('show'); return; }
   document.getElementById('mlFrame').innerHTML=`<iframe id="mlIframe" src="https://www.youtube.com/embed/${encodeURIComponent(videoId)}?enablejsapi=1&rel=0&playsinline=1&start=${Math.max(0,Math.floor(start||0))}&origin=${encodeURIComponent(location.origin)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
   document.getElementById('mlVideo').classList.add('show');
 }
@@ -4650,7 +4689,7 @@ async function mlPlay(videoId, gameId){
   await playMasterGame(gameId, vx.startFen||null);
   const it=mlFindItem(videoId);
   ML.yt={ videoId, gameId, times: Array.isArray(vx.moveTimes)?vx.moveTimes:[], moves: currentMoves, lastIdx: -1 };
-  try{ document.getElementById('boardTitle').textContent=((it&&it.index)?('#'+it.index+' '):'')+(g.result||''); document.getElementById('descBox').innerHTML='<b>'+mlEsc(g.event||'')+'</b><br>開局分類：<b>'+mlEsc(g.opening||'未分類')+'</b>（'+mlEsc(g.result||'未知')+'）<br>來源：影片覆盤 <a href="https://www.youtube.com/watch?v='+encodeURIComponent(videoId)+'" target="_blank" rel="noopener">YouTube</a>'; }catch(e){}
+  try{ document.getElementById('boardTitle').textContent=((it&&it.index)?('#'+it.index+' '):'')+(g.result||''); document.getElementById('descBox').innerHTML='<b>'+mlEsc(g.event||'')+'</b><br>開局分類：<b>'+mlEsc(g.opening||'未分類')+'</b>（'+mlEsc(g.result||'未知')+'）<br>來源：影片覆盤'+(mlVideoUrl(videoId)?' <a href="'+mlEsc(mlVideoUrl(videoId))+'" target="_blank" rel="noopener">'+(mlIsYt(videoId)?'YouTube':'原影片')+'</a>':''); }catch(e){}
   mlEmbed(videoId, (ML.yt.times[0]||0)-3);
   ML.yt.lastIdx=0; mlNowText();
   mlRender();
