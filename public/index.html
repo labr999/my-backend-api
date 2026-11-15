@@ -33,7 +33,7 @@
 <meta name="theme-color" content="#8B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="象棋開局">
-<title>象棋小棋聖 V2.9.24 ｜ 象棋開局譜</title>
+<title>象棋小棋聖 V2.9.25 ｜ 象棋開局譜</title>
 <style>
 
 :root{
@@ -267,7 +267,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 .cp-head h3{margin:0;flex:1;min-width:140px;font-size:.95rem}
 .cp-btn{padding:6px 10px;border:none;border-radius:8px;font-size:.76rem;font-weight:700;cursor:pointer;background:var(--surface-variant);color:var(--primary);white-space:nowrap}
 .cp-btn.main{background:var(--primary);color:#fff}
-.cp-list{max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+.cp-list{max-height:196px;overflow-y:auto;position:relative;display:flex;flex-direction:column;gap:4px}
 .cp-it{display:flex;gap:8px;align-items:center;padding:8px 10px;border-radius:10px;cursor:pointer;background:var(--surface-variant);font-size:.8rem;line-height:1.4}
 .cp-it .n{color:var(--on-surface-variant);min-width:2.2em;text-align:right}
 .cp-it .t{flex:1}
@@ -327,7 +327,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 <meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
-<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.24</span> <span id="xq-version-status">●</span></div>
+<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.25</span> <span id="xq-version-status">●</span></div>
 <script>
 (async()=>{try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();const el=document.getElementById('xq-version-status');if(el)el.textContent=d.ok?'● V'+d.version:'● OFFLINE';}catch(e){}})();
 </script>
@@ -3004,14 +3004,31 @@ function cpOpen(){
   CP.active=true; CP.side=curSide; CP.cat=curCat;
   document.getElementById('catPlayCard').classList.add('show');
   document.getElementById('myListCard').classList.add('cp-hide');
+  cpAiUp(true);
   cpRender();
-  try{ const c=document.querySelector('#cpList .cur'); if(c) c.scrollIntoView({block:'nearest'}); }catch(e){}
+}
+/* V2.9.25：分類播放時 AI 局勢分析移到分類棋譜正下方；關閉時放回原位 */
+function cpAiUp(up){
+  const ai=document.querySelector('.home-right-col .ai-card'); if(!ai) return;
+  if(up){
+    if(!ai._cpHome){ ai._cpHome=document.createComment('ai-card-home'); ai.parentNode.insertBefore(ai._cpHome,ai); }
+    const cp=document.getElementById('catPlayCard'); cp.parentNode.insertBefore(ai,cp.nextSibling);
+  }else if(ai._cpHome&&ai._cpHome.parentNode){ ai._cpHome.parentNode.insertBefore(ai,ai._cpHome); }
+}
+/* V2.9.25：清單高度剛好顯示 5 盤，其餘往下捲 */
+function cpFit(){
+  const box=document.getElementById('cpList'); const its=box.querySelectorAll('.cp-it');
+  if(its.length<=5){ box.style.maxHeight='none'; return; }
+  const h=its[0].offsetHeight; if(!h) return;
+  const gap=parseFloat(getComputedStyle(box).rowGap||getComputedStyle(box).gap)||4;
+  box.style.maxHeight=(h*5+gap*4+2)+'px';
 }
 function cpClose(silent){
   if(!CP.active && silent) return;
   CP.active=false;
   document.getElementById('catPlayCard').classList.remove('show');
   document.getElementById('myListCard').classList.remove('cp-hide');
+  cpAiUp(false);
   cpEndCheck();
 }
 function cpRender(){
@@ -3020,7 +3037,8 @@ function cpRender(){
   const k=list.findIndex(([,i])=>i===curIdx);
   document.getElementById('cpTitle').textContent='📂 '+CP.side+'・'+CP.cat+'（'+(k>=0?(k+1)+'／':'')+list.length+' 盤）';
   document.getElementById('cpList').innerHTML=list.length?list.map(([l,i],n)=>'<div class="cp-it'+(i===curIdx?' cur':'')+'" onclick="cpGo('+i+')"><span class="n">'+(n+1)+'</span><span class="t">'+mlEsc(l.name)+'</span><span class="s">'+l.moves.length+' 步</span></div>').join(''):'<div class="ml-empty">此分類沒有可播放的棋譜</div>';
-  const c=document.querySelector('#cpList .cur'); if(c){ const box=document.getElementById('cpList'); if(c.offsetTop<box.scrollTop||c.offsetTop>box.scrollTop+box.clientHeight-30) box.scrollTop=c.offsetTop-box.clientHeight/3; }
+  cpFit();
+  const c=document.querySelector('#cpList .cur'); if(c){ const box=document.getElementById('cpList'); if(c.offsetTop<box.scrollTop||c.offsetTop+c.offsetHeight>box.scrollTop+box.clientHeight) box.scrollTop=Math.max(0,c.offsetTop-c.offsetHeight*2); }
 }
 function cpGo(i){ if(!CP.active) return; loadLine(CP.side,CP.cat,i); cpRender(); cpEndCheck(); }
 function cpNext(fromBoard){
