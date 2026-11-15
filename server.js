@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.25';
-const DISPLAY_VERSION = 'V2.9.25';
+const APP_VERSION = '2.9.26';
+const DISPLAY_VERSION = 'V2.9.26';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -96,6 +96,8 @@ async function loadPg() {
       db.games = Array.isArray(d.games) ? d.games : [];
       db.playlists = Array.isArray(d.playlists) ? d.playlists : (db.playlists || []);
       db.videoTags = (d.videoTags && typeof d.videoTags === 'object') ? d.videoTags : (db.videoTags || {});
+      db.lineInbox = Array.isArray(d.lineInbox) ? d.lineInbox : (db.lineInbox || []);
+      db.lineGroups = (d.lineGroups && typeof d.lineGroups === 'object') ? d.lineGroups : (db.lineGroups || {});
       db.nextGameId = Number(d.nextGameId) || (db.games.reduce((m, g) => Math.max(m, Number(g.id) || 0), 0) + 1);
       for (const mp of MASTER_PLAYERS) if (!db.players.some(p => p.name === mp.name)) db.players.push({ ...mp });
       console.log(`[pg] 已從雲端資料庫載入 ${db.games.length} 盤、${db.players.length} 位棋手`);
@@ -129,6 +131,8 @@ if (!Array.isArray(db.games)) db.games = [];
 if (!Array.isArray(db.playlists)) db.playlists = [];
 if (!db.videoTags || typeof db.videoTags !== 'object' || Array.isArray(db.videoTags)) db.videoTags = {};
 db.nextGameId = Number(db.nextGameId) || 1;
+if (!Array.isArray(db.lineInbox)) db.lineInbox = [];
+if (!db.lineGroups || typeof db.lineGroups !== 'object') db.lineGroups = {};
 for (const mp of MASTER_PLAYERS) {
   if (!db.players.some(p => p.name === mp.name)) db.players.push({ ...mp });
 }
@@ -137,7 +141,7 @@ save();
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
-app.use(express.json({ limit: '20mb' }));
+app.use(express.json({ limit: '20mb', verify: (req, res, buf) => { if (req.originalUrl && req.originalUrl.startsWith('/api/line/')) req.rawBody = buf; } }));
 app.use(express.static(path.join(ROOT, 'public')));
 
 function ensurePlayer(name, title = '') {
@@ -986,10 +990,8 @@ function videoKey(raw) {
   const pre = { FB: 'fb', IG: 'ig', TikTok: 'tt', Bilibili: 'bili' }[site] || 'web';
   return { id: pre + '-' + hash, url: clean, site };
 }
-app.post('/api/video-import', (q, s) => {
-  const b = q.body || {};
-  const urls = (Array.isArray(b.urls) ? b.urls : String(b.url || '').split(/\s+/)).map(x => String(x).trim()).filter(Boolean).slice(0, 200);
-  if (!urls.length) return s.status(400).json({ error: '請貼影片網址' });
+function importVideos(urls, title) {
+  const b = { title: title || '' };
   let pl = db.playlists.find(x => x.id === IMPORT_PL);
   if (!pl) { pl = { id: IMPORT_PL, title: '匯入影片', url: '', items: [], updated_at: '' }; db.playlists.push(pl); }
   const added = [], bad = [], again = [];
@@ -1005,7 +1007,89 @@ app.post('/api/video-import', (q, s) => {
   }
   pl.updated_at = new Date().toISOString();
   if (added.length || again.length) save();
-  s.json({ ok: true, added, again, bad, queued: pl.items.filter(x => x.queued).length });
+  return { ok: true, added, again, bad, queued: pl.items.filter(x => x.queued).length };
+}
+app.post('/api/video-import', (q, s) => {
+  const b = q.body || {};
+  const urls = (Array.isArray(b.urls) ? b.urls : String(b.url || '').split(/\s+/)).map(x => String(x).trim()).filter(Boolean).slice(0, 200);
+  if (!urls.length) return s.status(400).json({ error: '請貼影片網址' });
+  s.json(importVideos(urls, b.title));
+});
+
+/* ===== V2.9.26：LINE 群組機器人 =====
+   LINE Developers 的 Messaging API channel → Webhook URL 設 https://<本站>/api/line/webhook
+   Render 環境變數：LINE_CHANNEL_SECRET（驗簽，必填）、LINE_CHANNEL_ACCESS_TOKEN（回覆群組，選填）、LINE_INBOX_KEY（Hark 讀取收件匣用）。
+   影片網址 → 直接排入「匯入影片」清單；所有文字訊息存 db.lineInbox，由 Hark 每天整理（比賽→行事曆、其他→摘要）。 */
+const VIDEO_HOST_RE = /(^|\.)(youtube\.com|youtu\.be|facebook\.com|fb\.watch|instagram\.com|tiktok\.com|bilibili\.com|b23\.tv)$/i;
+function lineVideoUrls(text) {
+  return (String(text || '').match(/https?:\/\/[^\s<>"'）)】]+/g) || []).filter(u => { try { return VIDEO_HOST_RE.test(new URL(u).hostname); } catch { return false; } });
+}
+async function lineReply(token, text) {
+  if (!process.env.LINE_CHANNEL_ACCESS_TOKEN || !token) return;
+  try {
+    await fetch('https://api.line.me/v2/bot/message/reply', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.LINE_CHANNEL_ACCESS_TOKEN }, body: JSON.stringify({ replyToken: token, messages: [{ type: 'text', text: String(text).slice(0, 4900) }] }) });
+  } catch (e) { console.error('[line] 回覆失敗', e.message); }
+}
+async function lineGroupName(gid) {
+  if (!gid || !process.env.LINE_CHANNEL_ACCESS_TOKEN) return '';
+  const g = db.lineGroups[gid]; if (g && g.name) return g.name;
+  try {
+    const r = await fetch('https://api.line.me/v2/bot/group/' + encodeURIComponent(gid) + '/summary', { headers: { Authorization: 'Bearer ' + process.env.LINE_CHANNEL_ACCESS_TOKEN } });
+    if (r.ok) { const j = await r.json(); db.lineGroups[gid] = { ...(db.lineGroups[gid] || {}), name: j.groupName || '' }; return j.groupName || ''; }
+  } catch {}
+  return '';
+}
+let lineLast = { at: null, events: 0, error: '' };
+app.post('/api/line/webhook', async (q, s) => {
+  const secret = process.env.LINE_CHANNEL_SECRET;
+  if (!secret) return s.status(503).json({ error: 'LINE_CHANNEL_SECRET 未設定' });
+  const sig = q.get('x-line-signature') || '';
+  const calc = require('crypto').createHmac('sha256', secret).update(q.rawBody || Buffer.from('')).digest('base64');
+  let okSig = false; try { okSig = sig.length === calc.length && require('crypto').timingSafeEqual(Buffer.from(sig), Buffer.from(calc)); } catch {}
+  if (!okSig) { lineLast = { at: new Date().toISOString(), events: 0, error: '簽章不符' }; return s.status(401).json({ error: 'bad signature' }); }
+  const events = Array.isArray(q.body && q.body.events) ? q.body.events : [];
+  s.json({ ok: true }); // 先回 200，避免 LINE 逾時
+  let changed = false;
+  for (const ev of events) {
+    try {
+      const src = ev.source || {}; const gid = src.groupId || src.roomId || '';
+      if (ev.type === 'join' && gid) { db.lineGroups[gid] = { ...(db.lineGroups[gid] || {}), joined: new Date(ev.timestamp || Date.now()).toISOString() }; await lineGroupName(gid); changed = true; continue; }
+      if (ev.type !== 'message' || !ev.message) continue;
+      const m = ev.message; const id = String(m.id || ev.webhookEventId || Date.now());
+      if (db.lineInbox.some(x => x.id === id)) continue;
+      const rec = { id, time: new Date(ev.timestamp || Date.now()).toISOString(), groupId: gid, group: await lineGroupName(gid), userId: src.userId || '', type: m.type, text: m.type === 'text' ? String(m.text || '').slice(0, 4000) : '', videos: [], done: false };
+      if (m.type === 'text') {
+        const urls = lineVideoUrls(m.text);
+        if (urls.length) {
+          const r = importVideos(urls, rec.text.replace(/https?:\/\/\S+/g, '').trim().slice(0, 120));
+          rec.videos = [...r.added.map(x => x.videoId), ...r.again.map(x => x.videoId)];
+          if (r.added.length) await lineReply(ev.replyToken, '♟ 已排入小棋聖辨識 ' + r.added.length + ' 支影片');
+        }
+      } else if (m.type === 'video') rec.text = '（群組內上傳影片檔，機器人無法排入辨識，請改貼影片網址）';
+      else if (m.type === 'image') rec.text = '（圖片）';
+      else if (m.type === 'file') rec.text = '（檔案：' + (m.fileName || '') + '）';
+      else if (m.type === 'sticker') continue;
+      db.lineInbox.push(rec); changed = true;
+    } catch (e) { console.error('[line] 事件處理失敗', e.message); lineLast.error = e.message; }
+  }
+  if (db.lineInbox.length > 3000) db.lineInbox = db.lineInbox.slice(-3000);
+  lineLast = { at: new Date().toISOString(), events: events.length, error: lineLast.error && changed ? lineLast.error : '' };
+  if (changed) save();
+});
+function lineKeyOk(q) { const k = process.env.LINE_INBOX_KEY; return !!k && (q.get('x-inbox-key') === k); }
+app.get('/api/line/status', (q, s) => s.json({ secret: !!process.env.LINE_CHANNEL_SECRET, token: !!process.env.LINE_CHANNEL_ACCESS_TOKEN, inboxKey: !!process.env.LINE_INBOX_KEY, groups: Object.keys(db.lineGroups).length, pending: db.lineInbox.filter(x => !x.done).length, last: lineLast }));
+app.get('/api/line/inbox', (q, s) => {
+  if (!lineKeyOk(q)) return s.status(401).json({ error: '需要 x-inbox-key' });
+  const all = q.query.all === '1';
+  const items = db.lineInbox.filter(x => all || !x.done).slice(-500);
+  s.json({ items, groups: db.lineGroups });
+});
+app.post('/api/line/inbox/ack', (q, s) => {
+  if (!lineKeyOk(q)) return s.status(401).json({ error: '需要 x-inbox-key' });
+  const ids = new Set((q.body && q.body.ids || []).map(String)); let n = 0;
+  for (const x of db.lineInbox) if (ids.has(x.id) && !x.done) { x.done = true; x.doneAt = new Date().toISOString(); n++; }
+  if (n) save();
+  s.json({ ok: true, acked: n });
 });
 app.get('/api/queue', (q, s) => {
   const out = [];
