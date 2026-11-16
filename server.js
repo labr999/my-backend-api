@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.34';
-const DISPLAY_VERSION = 'V2.9.34';
+const APP_VERSION = '2.9.35';
+const DISPLAY_VERSION = 'V2.9.35';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -130,7 +130,7 @@ let db = readJson(DB_FILE, { players: [], games: [], nextGameId: 1 });
 if (!Array.isArray(db.players)) db.players = [];
 if (!Array.isArray(db.games)) db.games = [];
 if (!Array.isArray(db.playlists)) db.playlists = [];
-if (!Array.isArray(db.plRemoved)) db.plRemoved = []; // V2.9.34：使用者刪掉的清單（影片覆盤自動同步不再加回）
+if (!Array.isArray(db.plRemoved)) db.plRemoved = []; // V2.9.35：使用者刪掉的清單（影片覆盤自動同步不再加回）
 if (!db.videoTags || typeof db.videoTags !== 'object' || Array.isArray(db.videoTags)) db.videoTags = {};
 db.nextGameId = Number(db.nextGameId) || 1;
 if (!Array.isArray(db.lineInbox)) db.lineInbox = [];
@@ -815,6 +815,7 @@ app.get('/api/games/:id', (q, s) => {
 
 app.post('/api/games', (q, s) => {
   const r = addGame(q.body || {});
+  if (!r.duplicate) { try { sweepFailed(); } catch (e) { console.error('[fail] sweep', e.message); } }
   s.status(r.duplicate ? 200 : 201).json({ ok: true, duplicate: r.duplicate, game: sanitizeGame(r.game) });
 });
 
@@ -835,6 +836,7 @@ function plSummary(pl, idx) {
   return { id: pl.id, title: pl.title, url: pl.url, updated_at: pl.updated_at, total: items.length, reviewed: items.filter(it => idx[it.videoId]).length, queued: items.filter(it => it.queued).length };
 }
 app.get('/api/playlists', (q, s) => {
+  try { sweepFailed(); } catch {}
   const idx = videoGamesIndex();
   s.json({ items: db.playlists.map(pl => plSummary(pl, idx)) });
 });
@@ -847,7 +849,7 @@ app.get('/api/playlists/:id', (q, s) => {
 function upsertPlaylist(b, force) {
   const id = String(b.id || '').trim().slice(0, 80);
   if (!id || !Array.isArray(b.items)) throw Object.assign(new Error('需要 id 與 items'), { code: 400 });
-  // V2.9.34：使用者刪掉的清單，影片覆盤自動同步不再加回；手動貼網址（force）才重新加入
+  // V2.9.35：使用者刪掉的清單，影片覆盤自動同步不再加回；手動貼網址（force）才重新加入
   if (db.plRemoved.includes(id)) { if (!force) return { id, skipped: 'removed' }; db.plRemoved = db.plRemoved.filter(x => x !== id); }
   let pl = db.playlists.find(x => x.id === id);
   const old = {}; if (pl) for (const it of pl.items || []) old[it.videoId] = it;
@@ -1020,6 +1022,17 @@ function removeFailed(videoId, status) {
   if (o) { o.status = status; o.queued = false; o.redo = false; o.time = new Date().toISOString(); }
   fp.updated_at = new Date().toISOString();
 }
+/* V2.9.35：本機（電腦或 iPad）辨識成功、棋譜已上傳 → 自動移出辨識失敗清單（不必等清單狀態回報） */
+function sweepFailed() {
+  const fp = db.playlists.find(x => x.id === FAIL_PL); if (!fp || !fp.items.length) return 0;
+  const idx = videoGamesIndex(); let n = 0;
+  for (const f of [...fp.items]) {
+    const gs = idx[f.videoId] || [];
+    if (gs.some(g => !g.branch && g.steps > SHORT_STEPS)) { removeFailed(f.videoId, 'ok'); n++; }
+  }
+  if (n) { console.log('[fail] 已辨識成功、移出辨識失敗清單 ' + n + ' 支'); save(); }
+  return n;
+}
 function lineFileFailed(rec) {
   return addFailed({ videoId: 'line-' + rec.id, title: '（LINE ' + (rec.group || '群組') + ' 上傳影片檔 ' + rec.time.slice(0, 16).replace('T', ' ') + '）' }, null, 'line_file', '群組直接上傳的影片檔，沒有網址無法下載；請改貼影片網址');
 }
@@ -1183,7 +1196,7 @@ app.delete('/api/playlists/:id', (q, s) => {
   if (removed) { if (id !== IMPORT_PL && id !== FAIL_PL && !db.plRemoved.includes(id)) db.plRemoved.push(id); save(); }
   s.json({ ok: true, removed });
 });
-/* V2.9.34：從清單刪除影片（只移出清單，已辨識的棋譜保留；重新同步不會再加回） */
+/* V2.9.35：從清單刪除影片（只移出清單，已辨識的棋譜保留；重新同步不會再加回） */
 app.post('/api/playlists/:id/remove', (q, s) => {
   const pl = db.playlists.find(x => x.id === q.params.id);
   if (!pl) return s.status(404).json({ error: '找不到清單' });
@@ -1617,5 +1630,5 @@ app.use((err, req, res, next) => {
 // Express 5：SPA fallback
 app.use((req, res) => res.sendFile(path.join(ROOT, 'public', 'index.html')));
 
-loadPg().finally(() => { try { migrateFailed(); } catch (e) { console.error('[fail] 移轉失敗', e.message); } }).finally(() => server.listen(PORT, '0.0.0.0', () => console.log(`xiangqi-web-suite ${DISPLAY_VERSION} listening on ${PORT}（儲存：${pgReady ? 'Neon Postgres' : '本機 JSON'}）`)));
+loadPg().finally(() => { try { migrateFailed(); sweepFailed(); } catch (e) { console.error('[fail] 移轉失敗', e.message); } }).finally(() => server.listen(PORT, '0.0.0.0', () => console.log(`xiangqi-web-suite ${DISPLAY_VERSION} listening on ${PORT}（儲存：${pgReady ? 'Neon Postgres' : '本機 JSON'}）`)));
 
