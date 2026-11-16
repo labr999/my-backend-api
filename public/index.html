@@ -33,7 +33,7 @@
 <meta name="theme-color" content="#8B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="象棋開局">
-<title>象棋小棋聖 V2.9.39 ｜ 象棋開局譜</title>
+<title>象棋小棋聖 V2.9.40 ｜ 象棋開局譜</title>
 <style>
 
 :root{
@@ -328,7 +328,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 <meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
-<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.39</span> <span id="xq-version-status">●</span></div>
+<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.40</span> <span id="xq-version-status">●</span></div>
 <script>
 (async()=>{try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();const el=document.getElementById('xq-version-status');if(el)el.textContent=d.ok?'● V'+d.version:'● OFFLINE';}catch(e){}})();
 </script>
@@ -2444,7 +2444,7 @@ function showLinkFallback(url){
   if(!box){
     box=document.createElement('div');
     box.id='linkFallback';
-    box.style.cssText='position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:99;background:var(--link-panel);border:1px solid var(--gold-strong);border-radius:10px;padding:14px 16px;max-width:92vw;width:520px;box-shadow:0 8px 24px rgba(0,0,0,.6);';
+    box.style.cssText='position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:99;background:var(--link-panel);border:1px solid var(--gold-strong);border-radius:10px;padding:14px 16px;max-width:92vw;width:520px;box-shadow:0 8px 24px rgba(0,0,0,.6);';
     box.innerHTML='<div style="font-size:.78rem;color:var(--gold-strong);font-weight:700;margin-bottom:8px;">此環境無法直接開新視窗，請複製連結到瀏覽器開啟：</div>'+
       '<input readonly style="width:100%;box-sizing:border-box;background:var(--link-input);color:#F3E6C8;border:1px solid var(--gold-dim);border-radius:6px;padding:8px 10px;font-size:.75rem;margin-bottom:8px;">'+
       '<div style="display:flex;gap:8px;justify-content:flex-end;">'+
@@ -2466,13 +2466,16 @@ function showLinkFallback(url){
   inp.value=url;
   box.style.display='block';
   inp.select(); inp.setSelectionRange(0,9999);
+  clearTimeout(box._t); box._t=setTimeout(()=>{ box.style.display='none'; },10000);
 }
 
 function openExternal(url){
   let ok=false;
   try{
-    const wnd = window.open(url, '_blank', 'noopener');
+    /* V2.9.40：'noopener' 會讓 window.open 一律回傳 null（新分頁其實已開），造成提示框誤跳；改成開完再切斷 opener */
+    const wnd = window.open(url, '_blank');
     ok = !!wnd;
+    if(wnd){ try{ wnd.opener=null; }catch(e){} }
   }catch(e){ ok=false; }
   if(!ok) showLinkFallback(url);
 }
@@ -4587,7 +4590,7 @@ async function mlMultiOpen(){
       '<div style="margin-top:6px"><button type="button" class="ml-g" onclick="document.getElementById(\'mlMulti\').style.display=\'none\'">完成</button> <button type="button" class="ml-g ml-del" onclick="mlDelCheckedLists()" title="刪除方框打勾的清單（已辨識棋譜保留）">🗑 刪除勾選的清單</button></div>';
   }catch(e){ box.innerHTML='讀取失敗：'+mlEsc(e.message); }
 }
-/* V2.9.39：多清單勾選裡一次刪除打勾的清單 */
+/* V2.9.40：多清單勾選裡一次刪除打勾的清單 */
 async function mlDelCheckedLists(){
   const ids=[...document.querySelectorAll('#mlMulti input[type=checkbox][data-pl]:checked')].map(x=>x.dataset.pl);
   if(!ids.length){ toast('先在方框勾選要刪除的清單'); return; }
@@ -4708,7 +4711,7 @@ async function mlRedo(ids){
     toast('已刪除 '+d.deleted+' 盤，'+d.queued+' 支排入重新辨識'); await mlLoad(ML.cur); }
   catch(e){ toast('失敗：'+e.message); }
 }
-/* V2.9.39：刪除清單裡的影片、刪除整個清單（已辨識的棋譜都保留） */
+/* V2.9.40：刪除清單裡的影片、刪除整個清單（已辨識的棋譜都保留） */
 async function mlRemoveVideos(ids){
   if(!ML.cur||!ids.length) return;
   const one=ids.length===1&&ML.data&&ML.data.items.find(x=>x.videoId===ids[0]);
