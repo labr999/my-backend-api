@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.38';
-const DISPLAY_VERSION = 'V2.9.38';
+const APP_VERSION = '2.9.39';
+const DISPLAY_VERSION = 'V2.9.39';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -130,7 +130,7 @@ let db = readJson(DB_FILE, { players: [], games: [], nextGameId: 1 });
 if (!Array.isArray(db.players)) db.players = [];
 if (!Array.isArray(db.games)) db.games = [];
 if (!Array.isArray(db.playlists)) db.playlists = [];
-if (!Array.isArray(db.plRemoved)) db.plRemoved = []; // V2.9.38：使用者刪掉的清單（影片覆盤自動同步不再加回）
+if (!Array.isArray(db.plRemoved)) db.plRemoved = []; // V2.9.39：使用者刪掉的清單（影片覆盤自動同步不再加回）
 if (!db.videoTags || typeof db.videoTags !== 'object' || Array.isArray(db.videoTags)) db.videoTags = {};
 db.nextGameId = Number(db.nextGameId) || 1;
 if (!Array.isArray(db.lineInbox)) db.lineInbox = [];
@@ -813,7 +813,7 @@ app.get('/api/games/:id', (q, s) => {
   }
 });
 
-/* V2.9.38：iPad 辨識頁上傳的棋譜（videoId=ipad-檔名）→ 依檔名對到清單裡同標題的影片，改用真正的影片 id（失敗清單就能移出） */
+/* V2.9.39：iPad 辨識頁上傳的棋譜（videoId=ipad-檔名）→ 依檔名對到清單裡同標題的影片，改用真正的影片 id（失敗清單就能移出） */
 function normTitle(t) { return toSimp(String(t || '')).replace(/\.(mp4|mov|webm|mkv)$/i, '').replace(/[_ -]?\d{3,4}p$/i, '').replace(/[^0-9a-z\u3400-\u9fff]/gi, '').toLowerCase(); }
 function matchVideoByName(name) {
   const n = normTitle(name); if (n.length < 6) return null;
@@ -871,7 +871,7 @@ app.get('/api/playlists/:id', (q, s) => {
 function upsertPlaylist(b, force) {
   const id = String(b.id || '').trim().slice(0, 80);
   if (!id || !Array.isArray(b.items)) throw Object.assign(new Error('需要 id 與 items'), { code: 400 });
-  // V2.9.38：使用者刪掉的清單，影片覆盤自動同步不再加回；手動貼網址（force）才重新加入
+  // V2.9.39：使用者刪掉的清單，影片覆盤自動同步不再加回；手動貼網址（force）才重新加入
   if (db.plRemoved.includes(id)) { if (!force) return { id, skipped: 'removed' }; db.plRemoved = db.plRemoved.filter(x => x !== id); }
   let pl = db.playlists.find(x => x.id === id);
   const old = {}; if (pl) for (const it of pl.items || []) old[it.videoId] = it;
@@ -975,7 +975,8 @@ app.delete('/api/games/:id', (q, s) => {
   const i = db.games.findIndex(x => String(x.id) === String(q.params.id));
   if (i < 0) return s.status(404).json({ error: '找不到棋譜' });
   const inf = videoGameInfo(db.games[i]);
-  if (!inf || inf.steps > SHORT_STEPS) return s.status(403).json({ error: '只能刪除 ' + SHORT_STEPS + ' 步內的影片辨識棋譜' });
+  let viaIpad = false; try { viaIpad = JSON.parse(db.games[i].rawExport || '{}').via === 'ipad-scan'; } catch {}
+  if (!(viaIpad && q.query.force === '1') && (!inf || inf.steps > SHORT_STEPS)) return s.status(403).json({ error: '只能刪除 ' + SHORT_STEPS + ' 步內的影片辨識棋譜' });
   db.games.splice(i, 1); save();
   s.json({ ok: true, deleted: 1 });
 });
@@ -1044,7 +1045,7 @@ function removeFailed(videoId, status) {
   if (o) { o.status = status; o.queued = false; o.redo = false; o.time = new Date().toISOString(); }
   fp.updated_at = new Date().toISOString();
 }
-/* V2.9.38：本機（電腦或 iPad）辨識成功、棋譜已上傳 → 自動移出辨識失敗清單（不必等清單狀態回報） */
+/* V2.9.39：本機（電腦或 iPad）辨識成功、棋譜已上傳 → 自動移出辨識失敗清單（不必等清單狀態回報） */
 function sweepFailed() {
   const fp = db.playlists.find(x => x.id === FAIL_PL); if (!fp || !fp.items.length) return 0;
   const idx = videoGamesIndex(); let n = 0;
@@ -1218,7 +1219,7 @@ app.delete('/api/playlists/:id', (q, s) => {
   if (removed) { if (id !== IMPORT_PL && id !== FAIL_PL && !db.plRemoved.includes(id)) db.plRemoved.push(id); save(); }
   s.json({ ok: true, removed });
 });
-/* V2.9.38：從清單刪除影片（只移出清單，已辨識的棋譜保留；重新同步不會再加回） */
+/* V2.9.39：從清單刪除影片（只移出清單，已辨識的棋譜保留；重新同步不會再加回） */
 app.post('/api/playlists/:id/remove', (q, s) => {
   const pl = db.playlists.find(x => x.id === q.params.id);
   if (!pl) return s.status(404).json({ error: '找不到清單' });
@@ -1327,7 +1328,7 @@ app.patch('/api/games/:id', (q, s) => {
   if (q.body.black !== undefined) g.black = String(q.body.black || '').trim();
   if (q.body.result !== undefined) g.result = String(q.body.result || '').trim();
   if (q.body.event !== undefined) g.event = String(q.body.event || '').trim();
-  if (q.body.videoId) { /* V2.9.38：手動把棋譜對到某支影片（例如 iPad 檔名 videoplayback.mp4） */
+  if (q.body.videoId) { /* V2.9.39：手動把棋譜對到某支影片（例如 iPad 檔名 videoplayback.mp4） */
     let vx = {}; try { vx = JSON.parse(g.rawExport || '{}') || {}; } catch {}
     if (vx.videoId && vx.videoId !== q.body.videoId && !vx.ipadId) vx.ipadId = vx.videoId;
     vx.videoId = String(q.body.videoId).slice(0, 80); g.rawExport = JSON.stringify(vx);
