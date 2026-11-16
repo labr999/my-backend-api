@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.33';
-const DISPLAY_VERSION = 'V2.9.33';
+const APP_VERSION = '2.9.34';
+const DISPLAY_VERSION = 'V2.9.34';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -98,6 +98,7 @@ async function loadPg() {
       db.videoTags = (d.videoTags && typeof d.videoTags === 'object') ? d.videoTags : (db.videoTags || {});
       db.lineInbox = Array.isArray(d.lineInbox) ? d.lineInbox : (db.lineInbox || []);
       db.lineGroups = (d.lineGroups && typeof d.lineGroups === 'object') ? d.lineGroups : (db.lineGroups || {});
+      db.plRemoved = Array.isArray(d.plRemoved) ? d.plRemoved : (db.plRemoved || []);
       db.nextGameId = Number(d.nextGameId) || (db.games.reduce((m, g) => Math.max(m, Number(g.id) || 0), 0) + 1);
       for (const mp of MASTER_PLAYERS) if (!db.players.some(p => p.name === mp.name)) db.players.push({ ...mp });
       console.log(`[pg] 已從雲端資料庫載入 ${db.games.length} 盤、${db.players.length} 位棋手`);
@@ -129,6 +130,7 @@ let db = readJson(DB_FILE, { players: [], games: [], nextGameId: 1 });
 if (!Array.isArray(db.players)) db.players = [];
 if (!Array.isArray(db.games)) db.games = [];
 if (!Array.isArray(db.playlists)) db.playlists = [];
+if (!Array.isArray(db.plRemoved)) db.plRemoved = []; // V2.9.34：使用者刪掉的清單（影片覆盤自動同步不再加回）
 if (!db.videoTags || typeof db.videoTags !== 'object' || Array.isArray(db.videoTags)) db.videoTags = {};
 db.nextGameId = Number(db.nextGameId) || 1;
 if (!Array.isArray(db.lineInbox)) db.lineInbox = [];
@@ -842,19 +844,22 @@ app.get('/api/playlists/:id', (q, s) => {
   const idx = videoGamesIndex();
   s.json({ ...plSummary(pl, idx), items: (pl.items || []).map(it => ({ ...it, games: idx[it.videoId] || [], tag: db.videoTags[it.videoId] || null })) });
 });
-function upsertPlaylist(b) {
+function upsertPlaylist(b, force) {
   const id = String(b.id || '').trim().slice(0, 80);
   if (!id || !Array.isArray(b.items)) throw Object.assign(new Error('需要 id 與 items'), { code: 400 });
+  // V2.9.34：使用者刪掉的清單，影片覆盤自動同步不再加回；手動貼網址（force）才重新加入
+  if (db.plRemoved.includes(id)) { if (!force) return { id, skipped: 'removed' }; db.plRemoved = db.plRemoved.filter(x => x !== id); }
   let pl = db.playlists.find(x => x.id === id);
   const old = {}; if (pl) for (const it of pl.items || []) old[it.videoId] = it;
-  const items = b.items.filter(it => it && it.videoId).slice(0, 2000).map((it, i) => ({
+  const removedIds = new Set((pl && pl.removedIds) || []);
+  const items = b.items.filter(it => it && it.videoId && !removedIds.has(String(it.videoId))).slice(0, 2000).map((it, i) => ({
     videoId: String(it.videoId).slice(0, 32), title: String(it.title || it.videoId).slice(0, 200), index: i + 1,
     status: it.status != null ? String(it.status).slice(0, 40) : ((old[it.videoId] && old[it.videoId].status) || ''),
     note: (old[it.videoId] && old[it.videoId].note) || '', queued: !!(old[it.videoId] && old[it.videoId].queued), redo: !!(old[it.videoId] && old[it.videoId].redo),
     time: it.time ? String(it.time).slice(0, 40) : ((old[it.videoId] && old[it.videoId].time) || ''),
     ...((old[it.videoId] && old[it.videoId].url) ? { url: old[it.videoId].url, site: old[it.videoId].site || '', plTitle: old[it.videoId].plTitle || '' } : {})
   }));
-  const rec = { id, title: String(b.title || id).slice(0, 120), url: String(b.url || '').slice(0, 300), items, updated_at: new Date().toISOString() };
+  const rec = { id, title: String(b.title || id).slice(0, 120), url: String(b.url || '').slice(0, 300), items, removedIds: [...removedIds], updated_at: new Date().toISOString() };
   if (pl) Object.assign(pl, rec); else db.playlists.push(rec);
   save();
   return plSummary(rec, videoGamesIndex());
@@ -893,7 +898,7 @@ async function importPlaylist(lid, knownTitle) {
     }
     pageToken = j.nextPageToken || ''; if (!pageToken) break;
   }
-  return upsertPlaylist({ id: lid, title, url: 'https://www.youtube.com/playlist?list=' + lid, items });
+  return upsertPlaylist({ id: lid, title, url: 'https://www.youtube.com/playlist?list=' + lid, items }, true);
 }
 app.post('/api/playlists/import', async (q, s) => {
   if (!process.env.YOUTUBE_API_KEY) return s.status(503).json({ error: '小棋聖尚未設定 YOUTUBE_API_KEY' });
@@ -1172,10 +1177,27 @@ app.get('/api/queue', (q, s) => {
   s.json({ items: out });
 });
 app.delete('/api/playlists/:id', (q, s) => {
-  const n = db.playlists.length;
-  db.playlists = db.playlists.filter(x => x.id !== q.params.id);
-  if (db.playlists.length !== n) save();
-  s.json({ ok: true, removed: n - db.playlists.length });
+  const id = q.params.id, n = db.playlists.length;
+  db.playlists = db.playlists.filter(x => x.id !== id);
+  const removed = n - db.playlists.length;
+  if (removed) { if (id !== IMPORT_PL && id !== FAIL_PL && !db.plRemoved.includes(id)) db.plRemoved.push(id); save(); }
+  s.json({ ok: true, removed });
+});
+/* V2.9.34：從清單刪除影片（只移出清單，已辨識的棋譜保留；重新同步不會再加回） */
+app.post('/api/playlists/:id/remove', (q, s) => {
+  const pl = db.playlists.find(x => x.id === q.params.id);
+  if (!pl) return s.status(404).json({ error: '找不到清單' });
+  const ids = new Set((Array.isArray((q.body || {}).videoIds) ? q.body.videoIds : []).map(String));
+  if (!ids.size) return s.status(400).json({ error: '需要 videoIds' });
+  const n = (pl.items || []).length;
+  pl.items = (pl.items || []).filter(it => !ids.has(String(it.videoId)));
+  const removed = n - pl.items.length;
+  if (removed) {
+    if (pl.id !== IMPORT_PL && pl.id !== FAIL_PL) pl.removedIds = [...new Set([...(pl.removedIds || []), ...ids])].slice(-5000);
+    pl.items.forEach((it, i) => { it.index = i + 1; });
+    pl.updated_at = new Date().toISOString(); save();
+  }
+  s.json({ ok: true, removed, total: pl.items.length });
 });
 
 /* ===== V2.9.9：YouTube 搜尋（整合自 xiang-video-search）與手動開局標記 ===== */

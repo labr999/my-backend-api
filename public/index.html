@@ -33,7 +33,7 @@
 <meta name="theme-color" content="#8B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="象棋開局">
-<title>象棋小棋聖 V2.9.33 ｜ 象棋開局譜</title>
+<title>象棋小棋聖 V2.9.34 ｜ 象棋開局譜</title>
 <style>
 
 :root{
@@ -300,6 +300,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 .ml-row.done:hover{background:rgba(139,26,26,.05)}
 .ml-row.cur{background:rgba(139,26,26,.10)}
 .ml-g{border:1px solid var(--primary);color:var(--primary);background:var(--surface);border-radius:9999px;padding:3px 10px;font:inherit;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap}
+.ml-g.ml-del{border-color:#c0392b;color:#c0392b}.ml-rm{margin-left:4px;padding:2px 7px;flex:none}
 .ml-g.win-r{border-color:#b52a2a;color:#b52a2a}.ml-g.win-b{border-color:#222;color:#222}
 .ml-g.on{background:var(--primary);color:var(--on-primary)}
 .ml-st{font-size:.76rem;color:var(--on-surface-variant);white-space:nowrap}
@@ -327,7 +328,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 <meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
-<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.33</span> <span id="xq-version-status">●</span></div>
+<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.34</span> <span id="xq-version-status">●</span></div>
 <script>
 (async()=>{try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();const el=document.getElementById('xq-version-status');if(el)el.textContent=d.ok?'● V'+d.version:'● OFFLINE';}catch(e){}})();
 </script>
@@ -470,6 +471,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
             <button type="button" class="ml-g" onclick="mlImport()" title="貼上 YouTube 播放清單網址（公開或不公開）直接同步">＋ 貼清單網址</button>
             <button type="button" class="ml-g" onclick="mlImport(true)" title="從 YouTube 重新同步目前清單">🔄 重新同步</button>
             <button type="button" class="ml-g" onclick="mlImportChannel()" title="同步你頻道所有公開清單（私人、不公開的清單請用「貼清單網址」）">📥 同步頻道公開清單</button>
+            <button type="button" class="ml-g ml-del" onclick="mlDelList()" title="刪除目前清單（已辨識的棋譜保留）">🗑 刪除清單</button>
             <span class="ml-filter" id="mlFilter">
               <button type="button" class="on" data-f="all">全部</button><button type="button" data-f="done">已覆盤</button><button type="button" data-f="todo">未覆盤</button><button type="button" data-f="queued">待辨識</button><button type="button" data-f="short" title="辨識不成功：只有 20 步內的棋譜">短棋譜≤20步</button>
             </span>
@@ -486,6 +488,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
             <span id="mlQn">待辨識 0 支</span>
             <button type="button" class="ml-g" onclick="mlQueueAll(true)" title="把目前列表（依篩選與搜尋）全部勾選">☑ 目前列表全選</button>
             <button type="button" class="ml-g" onclick="mlQueueAll(false)">清空勾選</button>
+            <button type="button" class="ml-g ml-del" onclick="mlRemoveChecked()" title="把勾選的影片從這個清單刪除（已辨識的棋譜保留）">🗑 刪除勾選影片</button>
             <button type="button" class="ml-g" onclick="mlMultiOpen()" title="一次勾選多個清單的未覆盤影片">📋 多清單勾選</button>
             <a class="ml-g" href="/ipad-scan.html" style="text-decoration:none" title="在 iPad／手機瀏覽器直接辨識影片檔（含 FB Reels）">📱 iPad 辨識影片檔</a>
             <button type="button" class="ml-g" onclick="mlRedoAll()" title="目前列表裡 20 步內的棋譜全部刪除並重新辨識">🔁 短棋譜全部重辨</button>
@@ -4663,7 +4666,7 @@ function mlRowHtml(it, no){
   return `<div class="ml-row done ${it.queued&&ML.view==='list'?'queued':''} ${ML.yt&&ML.yt.videoId===it.videoId?'cur':''}" onclick="${click}" data-vid="${mlEsc(it.videoId)}">
     <span class="ml-no">${chk}${no}</span>
     <span class="ml-title"><a href="${it.url?mlEsc(it.url):('https://www.youtube.com/watch?v='+encodeURIComponent(it.videoId))}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="${mlEsc(it.title)}">${mlEsc(it.title)}</a>${sub?`<span class="ml-sub">${mlEsc(sub)}</span>`:''}</span>
-    <span class="ml-games">${games||st}</span>${mlTagSelect(it)}</div>`;
+    <span class="ml-games">${games||st}</span>${mlTagSelect(it)}${ML.view==='list'?`<button type="button" class="ml-g ml-del ml-rm" title="從清單刪除這支影片（棋譜保留）" onclick="event.stopPropagation();mlRemoveVideos(['${mlEsc(it.videoId)}'])">✕</button>`:''}</div>`;
 }
 function mlMatch(it,q){ if(!q) return true; const h=(it.title+' '+(it.tag?it.tag.opening:'')+' '+((it.games||[]).map(g=>g.opening).join(' '))).toLowerCase(); return q.toLowerCase().split(/\s+/).every(w=>h.includes(w)); }
 function mlRender(){
@@ -4695,6 +4698,25 @@ async function mlRedo(ids){
     toast('已刪除 '+d.deleted+' 盤，'+d.queued+' 支排入重新辨識'); await mlLoad(ML.cur); }
   catch(e){ toast('失敗：'+e.message); }
 }
+/* V2.9.34：刪除清單裡的影片、刪除整個清單（已辨識的棋譜都保留） */
+async function mlRemoveVideos(ids){
+  if(!ML.cur||!ids.length) return;
+  const one=ids.length===1&&ML.data&&ML.data.items.find(x=>x.videoId===ids[0]);
+  if(!confirm('從「'+((ML.data&&ML.data.title)||'清單')+'」刪除'+(one?'「'+one.title+'」':ids.length+' 支影片')+'？\n已辨識的棋譜會保留；重新同步也不會再加回。')) return;
+  try{ const r=await fetch('/api/playlists/'+encodeURIComponent(ML.cur)+'/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({videoIds:ids})}); const d=await r.json(); if(!r.ok) throw new Error(d.error||r.status);
+    toast('已刪除 '+d.removed+' 支，剩 '+d.total+' 支'); await mlLoad(ML.cur); mlRefreshSelect(); }
+  catch(e){ toast('刪除失敗：'+e.message); }
+}
+function mlRemoveChecked(){ const ids=((ML.data&&ML.data.items)||[]).filter(x=>x.queued).map(x=>x.videoId); if(!ids.length){ toast('先勾選要刪除的影片'); return; } mlRemoveVideos(ids); }
+async function mlDelList(){
+  const id=ML.cur; if(!id){ toast('先選一個清單'); return; }
+  const t=(ML.data&&ML.data.title)||id;
+  if(!confirm('刪除清單「'+t+'」？\n清單裡已辨識的棋譜會保留；電腦影片覆盤自動同步不會再加回（要回來請用「＋ 貼清單網址」）。')) return;
+  try{ const r=await fetch('/api/playlists/'+encodeURIComponent(id),{method:'DELETE'}); const d=await r.json(); if(!r.ok) throw new Error(d.error||r.status);
+    try{localStorage.removeItem('xqMyList');}catch(e){} toast('已刪除清單'); ML.data=null; ML.cur=''; await mlInit(); }
+  catch(e){ toast('刪除失敗：'+e.message); }
+}
+async function mlRefreshSelect(){ try{ const d=await (await fetch('/api/playlists',{cache:'no-store'})).json(); ML.lists=d.items||[]; const sel=document.getElementById('mlSelect'); const v=sel.value; sel.innerHTML=ML.lists.map(l=>`<option value="${mlEsc(l.id)}">${mlEsc(l.title)}（已覆盤 ${l.reviewed}/${l.total}）</option>`).join(''); sel.value=v; }catch(e){} }
 function mlRedoAll(){ const ids=mlListItems().filter(mlHasShort).map(x=>x.videoId); if(!ids.length){ toast('目前列表沒有 20 步內的棋譜'); return; } mlRedo(ids); }
 function mlListItems(){ const q=document.getElementById('mlQ').value.trim(); return ((ML.data&&ML.data.items)||[]).filter(it=>mlPass(it)&&mlMatch(it,q)); }
 function mlQbar(){
