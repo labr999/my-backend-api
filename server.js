@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.26';
-const DISPLAY_VERSION = 'V2.9.26';
+const APP_VERSION = '2.9.27';
+const DISPLAY_VERSION = 'V2.9.27';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -928,6 +928,9 @@ app.post('/api/playlists/:id/status', (q, s) => {
   it.status = String(b.status || '').slice(0, 40); it.note = String(b.note || '').slice(0, 200); it.time = new Date().toISOString();
   // V2.9.10：辨識完成（含找不到開局、步數太少）就移出待辨識；下載失敗、引擎錯誤留著下次再跑
   if (it.queued && !/^(error|engine_error)/.test(it.status)) { it.queued = false; it.redo = false; }
+  // V2.9.27：下載失敗／找不到開局 → 移到「辨識失敗影片」清單（原清單取消勾選）；之後辨識成功就移出
+  if (isFailStatus(it.status)) { addFailed(it, pl, it.status, it.note); if (pl.id !== FAIL_PL) { it.queued = false; it.redo = false; } }
+  else if (it.status === 'ok' || it.status === 'too_short') removeFailed(it.videoId, it.status);
   pl.updated_at = it.time;
   save();
   s.json({ ok: true });
@@ -967,10 +970,64 @@ app.post('/api/playlists/:id/queue', (q, s) => {
   const on = b.on !== false;
   let n = 0;
   const idx = (b.all === true && b.todoOnly && on) ? videoGamesIndex() : null;
-  for (const it of pl.items || []) if (ids.has(it.videoId) || (b.all === true && !(idx && idx[it.videoId]))) { if (!!it.queued !== on) n++; it.queued = on; }
+  for (const it of pl.items || []) if (!/^line-/.test(it.videoId) && (ids.has(it.videoId) || (b.all === true && !(idx && idx[it.videoId])))) { if (!!it.queued !== on) n++; it.queued = on; }
   if (n) save();
   s.json({ ok: true, changed: n, queued: (pl.items || []).filter(x => x.queued).length });
 });
+/* V2.9.27：辨識失敗影片清單：下載失敗（error:…）、找不到開局（no_start）、LINE 群組直接上傳的影片檔 */
+const FAIL_PL = 'failed-videos';
+function isFailStatus(st) { return /^(error|no_start)/.test(String(st || '')); }
+function failReason(st) {
+  st = String(st || '');
+  if (/^no_start/.test(st)) return '找不到開局（無法辨識）';
+  if (st === 'line_file') return '群組上傳影片檔（無網址）';
+  if (/^error/.test(st)) return /下載失敗|download|HTTPS|timed out|format/i.test(st) ? '無法下載' : '辨識錯誤';
+  return st;
+}
+function failPl() {
+  let fp = db.playlists.find(x => x.id === FAIL_PL);
+  if (!fp) { fp = { id: FAIL_PL, title: '辨識失敗影片', url: '', items: [], updated_at: '' }; db.playlists.push(fp); }
+  return fp;
+}
+function addFailed(it, src, status, note) {
+  const fp = failPl();
+  const now = new Date().toISOString();
+  let f = fp.items.find(x => x.videoId === it.videoId);
+  const reason = failReason(status);
+  if (!f) {
+    f = { videoId: it.videoId, title: it.title || it.videoId, index: fp.items.length + 1, status: '', note: '', queued: false, redo: false, time: now };
+    if (it.url) { f.url = it.url; f.site = it.site || ''; }
+    else if (/^[\w-]{11}$/.test(it.videoId)) { f.url = 'https://www.youtube.com/watch?v=' + it.videoId; f.site = 'YouTube'; }
+    fp.items.push(f);
+  }
+  if (src && src.id !== FAIL_PL) { f.srcPl = src.id; f.srcTitle = src.title; f.plTitle = it.plTitle || src.title; }
+  f.status = String(status || '').slice(0, 40); f.reason = reason; f.note = String(note || reason).slice(0, 200); f.time = now;
+  f.fails = (f.fails || 0) + 1;
+  fp.updated_at = now;
+  return f;
+}
+function removeFailed(videoId, status) {
+  const fp = db.playlists.find(x => x.id === FAIL_PL); if (!fp) return;
+  const f = fp.items.find(x => x.videoId === videoId); if (!f) return;
+  fp.items = fp.items.filter(x => x.videoId !== videoId); fp.items.forEach((x, i) => { x.index = i + 1; });
+  const src = f.srcPl && db.playlists.find(x => x.id === f.srcPl);
+  const o = src && (src.items || []).find(x => x.videoId === videoId);
+  if (o) { o.status = status; o.queued = false; o.redo = false; o.time = new Date().toISOString(); }
+  fp.updated_at = new Date().toISOString();
+}
+function lineFileFailed(rec) {
+  return addFailed({ videoId: 'line-' + rec.id, title: '（LINE ' + (rec.group || '群組') + ' 上傳影片檔 ' + rec.time.slice(0, 16).replace('T', ' ') + '）' }, null, 'line_file', '群組直接上傳的影片檔，沒有網址無法下載；請改貼影片網址');
+}
+function migrateFailed() {
+  let n = 0;
+  for (const pl of db.playlists) {
+    if (pl.id === FAIL_PL) continue;
+    for (const it of pl.items || []) if (isFailStatus(it.status) && !(failPl().items.some(x => x.videoId === it.videoId))) { addFailed(it, pl, it.status, it.note); it.queued = false; n++; }
+  }
+  for (const r of db.lineInbox) if (r.type === 'video' && !failPl().items.some(x => x.videoId === 'line-' + r.id)) { lineFileFailed(r); n++; }
+  if (n) { console.log('[fail] 已移入辨識失敗影片 ' + n + ' 支'); save(); }
+}
+
 /* V2.9.23：匯入棋譜貼影片網址（YouTube、FB Reels、IG、TikTok、Bilibili…）→ 放進「匯入影片」清單並勾選，影片覆盤按 Q 下載辨識 */
 const IMPORT_PL = 'import-videos';
 function videoKey(raw) {
@@ -1065,7 +1122,7 @@ app.post('/api/line/webhook', async (q, s) => {
           rec.videos = [...r.added.map(x => x.videoId), ...r.again.map(x => x.videoId)];
           if (r.added.length) await lineReply(ev.replyToken, '♟ 已排入小棋聖辨識 ' + r.added.length + ' 支影片');
         }
-      } else if (m.type === 'video') rec.text = '（群組內上傳影片檔，機器人無法排入辨識，請改貼影片網址）';
+      } else if (m.type === 'video') { rec.text = '（群組內上傳影片檔，機器人無法排入辨識，已放到「辨識失敗影片」；請改貼影片網址）'; lineFileFailed(rec); }
       else if (m.type === 'image') rec.text = '（圖片）';
       else if (m.type === 'file') rec.text = '（檔案：' + (m.fileName || '') + '）';
       else if (m.type === 'sticker') continue;
@@ -1093,7 +1150,7 @@ app.post('/api/line/inbox/ack', (q, s) => {
 });
 app.get('/api/queue', (q, s) => {
   const out = [];
-  for (const pl of db.playlists) for (const it of pl.items || []) if (it.queued)
+  for (const pl of db.playlists) for (const it of pl.items || []) if (it.queued && !/^line-/.test(it.videoId))
     out.push({ playlistId: pl.id, playlistTitle: it.plTitle || pl.title, videoId: it.videoId, title: it.title, index: it.index, status: it.status || '', redo: !!it.redo, url: it.url || '' });
   s.json({ items: out });
 });
@@ -1521,5 +1578,5 @@ app.use((err, req, res, next) => {
 // Express 5：SPA fallback
 app.use((req, res) => res.sendFile(path.join(ROOT, 'public', 'index.html')));
 
-loadPg().finally(() => server.listen(PORT, '0.0.0.0', () => console.log(`xiangqi-web-suite ${DISPLAY_VERSION} listening on ${PORT}（儲存：${pgReady ? 'Neon Postgres' : '本機 JSON'}）`)));
+loadPg().finally(() => { try { migrateFailed(); } catch (e) { console.error('[fail] 移轉失敗', e.message); } }).finally(() => server.listen(PORT, '0.0.0.0', () => console.log(`xiangqi-web-suite ${DISPLAY_VERSION} listening on ${PORT}（儲存：${pgReady ? 'Neon Postgres' : '本機 JSON'}）`)));
 
