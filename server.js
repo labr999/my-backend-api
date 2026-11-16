@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.27';
-const DISPLAY_VERSION = 'V2.9.27';
+const APP_VERSION = '2.9.28';
+const DISPLAY_VERSION = 'V2.9.28';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -1132,6 +1132,23 @@ app.post('/api/line/webhook', async (q, s) => {
   if (db.lineInbox.length > 3000) db.lineInbox = db.lineInbox.slice(-3000);
   lineLast = { at: new Date().toISOString(), events: events.length, error: lineLast.error && changed ? lineLast.error : '' };
   if (changed) save();
+});
+/* V2.9.28：LINE 群組上傳的影片檔，透過 LINE 內容 API 轉播（LINE 只保留一段時間，過期就讀不到） */
+app.get('/api/line/video/:id', async (q, s) => {
+  const id = String(q.params.id || '');
+  if (!/^\d{5,30}$/.test(id) || !db.lineInbox.some(x => x.id === id && x.type === 'video')) return s.status(404).send('找不到這支影片');
+  if (!process.env.LINE_CHANNEL_ACCESS_TOKEN) return s.status(503).send('LINE_CHANNEL_ACCESS_TOKEN 未設定');
+  try {
+    const h = { Authorization: 'Bearer ' + process.env.LINE_CHANNEL_ACCESS_TOKEN };
+    if (q.get('range')) h.Range = q.get('range');
+    const r = await fetch('https://api-data.line.me/v2/bot/message/' + id + '/content', { headers: h });
+    if (r.status === 202) return s.status(202).send('LINE 還在處理這支影片，稍後再試');
+    if (!r.ok && r.status !== 206) return s.status(r.status === 404 ? 410 : 502).send(r.status === 404 ? 'LINE 已不保留這支影片（過期）' : ('LINE 回應 ' + r.status));
+    s.status(r.status);
+    for (const k of ['content-type', 'content-length', 'content-range', 'accept-ranges']) { const v = r.headers.get(k); if (v) s.set(k, v); }
+    const { Readable } = require('stream');
+    Readable.fromWeb(r.body).pipe(s);
+  } catch (e) { if (!s.headersSent) s.status(502).send('讀取失敗：' + e.message); }
 });
 function lineKeyOk(q) { const k = process.env.LINE_INBOX_KEY; return !!k && (q.get('x-inbox-key') === k); }
 app.get('/api/line/status', (q, s) => s.json({ secret: !!process.env.LINE_CHANNEL_SECRET, token: !!process.env.LINE_CHANNEL_ACCESS_TOKEN, inboxKey: !!process.env.LINE_INBOX_KEY, groups: Object.keys(db.lineGroups).length, pending: db.lineInbox.filter(x => !x.done).length, last: lineLast }));

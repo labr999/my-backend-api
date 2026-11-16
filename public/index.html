@@ -33,7 +33,7 @@
 <meta name="theme-color" content="#8B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="象棋開局">
-<title>象棋小棋聖 V2.9.27 ｜ 象棋開局譜</title>
+<title>象棋小棋聖 V2.9.28 ｜ 象棋開局譜</title>
 <style>
 
 :root{
@@ -327,7 +327,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 <meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
-<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.27</span> <span id="xq-version-status">●</span></div>
+<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.28</span> <span id="xq-version-status">●</span></div>
 <script>
 (async()=>{try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();const el=document.getElementById('xq-version-status');if(el)el.textContent=d.ok?'● V'+d.version:'● OFFLINE';}catch(e){}})();
 </script>
@@ -4762,7 +4762,9 @@ document.addEventListener('input',e=>{ if(e.target&&e.target.id==='mlQ'&&(ML.vie
 function mlFindItem(videoId){ return [].concat(ML.data&&ML.data.items||[], ML.search&&ML.search.items||[]).find(x=>x.videoId===videoId); }
 function mlIsYt(v){ return /^[\w-]{11}$/.test(String(v||'')); }
 function mlVideoUrl(videoId){ const it=mlFindItem(videoId); return mlIsYt(videoId)?'https://www.youtube.com/watch?v='+encodeURIComponent(videoId):((it&&it.url)||''); }
+function mlVidErr(el){ const d=document.createElement('div'); d.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;background:#222;text-align:center;padding:12px'; d.textContent='LINE 已不保留這支影片（或還在處理），請到 LINE 群組聊天紀錄查看'; el.replaceWith(d); }
 function mlEmbed(videoId, start){
+  if(/^line-\d+$/.test(String(videoId))){ const mid=String(videoId).slice(5); document.getElementById('mlFrame').innerHTML='<video controls playsinline preload="metadata" style="position:absolute;inset:0;width:100%;height:100%;background:#000" src="/api/line/video/'+encodeURIComponent(mid)+'" onerror="mlVidErr(this)"></video>'; document.getElementById('mlVideo').classList.add('show'); return; }
   if(!mlIsYt(videoId)){ const u=mlVideoUrl(videoId); document.getElementById('mlFrame').innerHTML='<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;background:#222;text-align:center;padding:12px">'+(u?'這支不是 YouTube 影片，無法內嵌播放<br><a style="color:#ffd27a" target="_blank" rel="noopener" href="'+mlEsc(u)+'">開啟原影片</a>':'本機影片辨識的棋譜（沒有線上影片）')+'</div>'; document.getElementById('mlVideo').classList.add('show'); return; }
   document.getElementById('mlFrame').innerHTML=`<iframe id="mlIframe" src="https://www.youtube.com/embed/${encodeURIComponent(videoId)}?enablejsapi=1&rel=0&playsinline=1&start=${Math.max(0,Math.floor(start||0))}&origin=${encodeURIComponent(location.origin)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
   document.getElementById('mlVideo').classList.add('show');
@@ -4771,8 +4773,12 @@ function mlWatch(videoId){
   const it=mlFindItem(videoId);
   ML.yt={ videoId, gameId:null, times:[], moves:null, lastIdx:-1 };
   mlEmbed(videoId, 0);
-  document.getElementById('mlNow').innerHTML='尚未覆盤，只播放影片'+(it?'：'+mlEsc(it.title):'');
+  const u=mlVideoUrl(videoId);
+  const head = (it&&it.reason) ? ('辨識失敗（'+mlEsc(it.reason)+'）') : '尚未覆盤，只播放影片';
+  document.getElementById('mlNow').innerHTML=head+(it?'：'+mlEsc(it.title):'')+
+    (u ? '<br>原影片網址：<a href="'+mlEsc(u)+'" target="_blank" rel="noopener" style="word-break:break-all">'+mlEsc(u)+'</a>' : (/^line-/.test(String(videoId))?'<br>來源：LINE 群組上傳的影片檔（沒有網址）':''));
   mlRender();
+  try{ document.getElementById('mlVideo').scrollIntoView({behavior:'smooth',block:'start'}); }catch(e){}
 }
 async function mlPlay(videoId, gameId){
   let g;
