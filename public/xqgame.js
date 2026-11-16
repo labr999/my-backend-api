@@ -134,7 +134,7 @@
       const mine = Math.ceil(left / 2), his = Math.floor(left / 2);
       if ((side === 'w' ? n.R : n.B) > mine || (side === 'w' ? n.B : n.R) > his) return null;
       for (const mv of pseudo({ b: q.b, turn: side }, side)) { // 推算用快速版（不檢查送將）
-        if (!bad(q, mv[0][0], mv[0][1])) continue;
+        if (!bad(q, mv[0][0], mv[0][1]) || rows[mv[1][0]][mv[1][1]] === 'x') continue; // V2.9.33：落點要看得到，避免在被擋住的地方憑空編棋步
         const r = dfs(make({ b: q.b, turn: side }, mv), side === 'w' ? 'b' : 'w', left - 1, path.concat([[mv, side]]));
         if (r) return r;
       }
@@ -160,7 +160,35 @@
     }
     _apply(mv, t, side) {
       const s = this.cur; if (!s.turnKnown) { s.pos.turn = side; s.startPos.turn = side; s.hist[0].turn = side; s.turnKnown = true; }
-      const cn = moveCn(s.pos, mv); s.pos = make(s.pos, mv); s.hist.push(copy(s.pos)); s.moves.push({ mv, cn, t });
+      // V2.9.33：同一方同一顆子連動兩次（老師拿著棋子比劃、先放錯格再挪）→ 合併成一步
+      const last = s.moves[s.moves.length - 1];
+      if (last && last.side === side && last.mv[1][0] === mv[0][0] && last.mv[1][1] === mv[0][1] && !last.cap) {
+        const before = s.hist[s.hist.length - 2], comb = [last.mv[0], mv[1]];
+        if (comb[0][0] === comb[1][0] && comb[0][1] === comb[1][1]) { s.hist.pop(); s.moves.pop(); s.pos = copy(before); this.merged = (this.merged || 0) + 1; return; }
+        if (legal({ b: before.b, turn: side }, side).some(m => m[0][0] === comb[0][0] && m[0][1] === comb[0][1] && m[1][0] === comb[1][0] && m[1][1] === comb[1][1])) {
+          s.hist.pop(); s.moves.pop(); s.pos = copy(before); this.merged = (this.merged || 0) + 1; mv = comb;
+        }
+      }
+      // V2.9.33：同一方連走兩步、而前兩手是同一顆子分兩次走（中間隔對方一步）→ 把那兩次合併，先後手就對回來
+      else if (last && last.side === side && s.moves.length >= 3) {
+        const a = s.moves[s.moves.length - 3], b2 = s.moves[s.moves.length - 2];
+        if (a.side === side && b2.side !== side && last.mv[0][0] === a.mv[1][0] && last.mv[0][1] === a.mv[1][1] && !a.cap && !last.cap) {
+          const base = s.hist[s.hist.length - 4], comb = [a.mv[0], last.mv[1]];
+          const eq = (m, n) => m[0][0] === n[0][0] && m[0][1] === n[0][1] && m[1][0] === n[1][0] && m[1][1] === n[1][1];
+          if (legal({ b: base.b, turn: side }, side).some(m => eq(m, comb))) {
+            const p1 = make({ b: base.b, turn: side }, comb);
+            if (legal({ b: p1.b, turn: b2.side }, b2.side).some(m => eq(m, b2.mv))) {
+              const p2 = make({ b: p1.b, turn: b2.side }, b2.mv);
+              s.hist.length -= 3; s.moves.length -= 3;
+              s.hist.push(p1); s.moves.push({ mv: comb, cn: moveCn({ b: base.b, turn: side }, comb), t: a.t, side, cap: !!base.b[comb[1][0]][comb[1][1]] });
+              s.hist.push(p2); s.moves.push(Object.assign({}, b2, { cn: moveCn({ b: p1.b, turn: b2.side }, b2.mv) }));
+              s.pos = copy(p2); this.merged = (this.merged || 0) + 1;
+            }
+          }
+        }
+      }
+      const cap = !!s.pos.b[mv[1][0]][mv[1][1]];
+      const cn = moveCn({ b: s.pos.b, turn: side }, mv); s.pos = make({ b: s.pos.b, turn: side }, mv); s.hist.push(copy(s.pos)); s.moves.push({ mv, cn, t, side, cap });
     }
     feed(rows, t) {
       const hid = hiddenCount(rows);
@@ -168,8 +196,20 @@
       if (!this.cur && mismatch(rows, this.start) <= 4) this.sawStart = true; // V2.9.30：看過像開局的畫面（邊路常誤讀）
       if (sameObs(rows, this.prev)) this.stable++; else this.stable = 1;
       this.prev = rows;
-      if (this.stable < 2) return null;
       const s = this.cur;
+      if (this.stable < 2) {
+        // V2.9.33：老師連續快走時畫面很少連續兩次一樣 → 只要一步合法著法能「唯一且完全」對上就先記下
+        if (!s || hid > 12 || mismatch(rows, s.pos) === 0) return null;
+        const sides1 = s.turnKnown ? [s.pos.turn] : ['w', 'b']; let hit = null, cnt = 0;
+        for (const side of sides1) for (const mv of legal(s.pos, side)) if (mismatch(rows, make({ b: s.pos.b, turn: side }, mv)) === 0) { cnt++; hit = [mv, side]; }
+        if (cnt === 1) { this._apply(hit[0], t, hit[1]); return 'move'; }
+        // 幾乎整盤看得清楚、但一次差了好幾步 → 推算（完全對上才算）
+        if (hid <= 8 && mismatch(rows, s.pos) >= 3) {
+          const path = bridge(s.pos, rows, 8, s.turnKnown ? s.pos.turn : 'w', 4000, 0);
+          if (path && path.length) { for (const [mv, sd] of path) this._apply(mv, t, sd); this.bridged = path.length; return 'bridge'; }
+        }
+        return null;
+      }
       if (!s) {
         if (mismatch(rows, this.start) <= 3) { this._newSeg(this.start, t, false); return 'start'; }
         if (this.stable >= 3 && hiddenCount(rows) === 0) {
@@ -228,7 +268,7 @@
         const n = s.hist.length - 1 - k; s.hist.length = k + 1; s.moves.length = k; s.pos = copy(s.hist[k]); this.takebacks += n; return 'takeback';
       }
       // V2.9.31：被主播擋住或走太快 → 畫面穩定時從目前局面推算（最多 8 步，被擋的格子不限制）
-      if (this.stable % 3 === 0 && this.stable <= 9 && d0 >= 2 && hid <= 40) {
+      if ((this.stable === 2 || this.stable % 3 === 0) && this.stable <= 9 && d0 >= 2 && hid <= 40) {
         // 先找完全對上的；找不到再容許 1 格誤讀（至少 2 步）
         const sd0 = s.turnKnown ? s.pos.turn : 'w';
         const path = bridge(s.pos, rows, 8, sd0, 4000, 0) || (hid <= 20 ? bridge(s.pos, rows, 8, sd0, 4000, 1) : null);
