@@ -33,7 +33,7 @@
 <meta name="theme-color" content="#8B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="象棋開局">
-<title>象棋小棋聖 V2.9.28 ｜ 象棋開局譜</title>
+<title>象棋小棋聖 V2.9.29 ｜ 象棋開局譜</title>
 <style>
 
 :root{
@@ -327,7 +327,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 <meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
-<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.28</span> <span id="xq-version-status">●</span></div>
+<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.29</span> <span id="xq-version-status">●</span></div>
 <script>
 (async()=>{try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();const el=document.getElementById('xq-version-status');if(el)el.textContent=d.ok?'● V'+d.version:'● OFFLINE';}catch(e){}})();
 </script>
@@ -4579,10 +4579,15 @@ async function mlMultiOpen(){
   box.innerHTML='讀取中…'; box.style.display='';
   try{
     const d=await (await fetch('/api/playlists',{cache:'no-store'})).json(); ML.lists=d.items||[];
-    box.innerHTML='<div class="ml-qhint">勾選清單＝把該清單「未覆盤」的影片全部排入辨識；取消＝清掉該清單的勾選。</div>'+
-      ML.lists.map(l=>`<label><input type="checkbox" ${l.queued?'checked':''} onchange="mlMultiSet('${mlEsc(l.id)}',this.checked,this)"> ${mlEsc(l.title)}<span class="mm-n" id="mmn-${mlEsc(l.id)}">待辨識 ${l.queued}／未覆盤 ${l.total-l.reviewed}</span></label>`).join('')+
+    box.innerHTML='<div class="ml-qhint">方框＝把該清單「未覆盤」的影片全部排入辨識（取消＝清掉勾選）；點清單名稱＝打開清單看影片。</div>'+
+      ML.lists.map(l=>`<label><input type="checkbox" title="勾選＝排入辨識" ${l.queued?'checked':''} onchange="mlMultiSet('${mlEsc(l.id)}',this.checked,this)"> <a href="#" title="打開這個清單看影片" onclick="event.preventDefault();event.stopPropagation();mlOpenList('${mlEsc(l.id)}')">${mlEsc(l.title)}</a><span class="mm-n" id="mmn-${mlEsc(l.id)}">待辨識 ${l.queued}／未覆盤 ${l.total-l.reviewed}</span></label>`).join('')+
       '<div style="margin-top:6px"><button type="button" class="ml-g" onclick="document.getElementById(\'mlMulti\').style.display=\'none\'">完成</button></div>';
   }catch(e){ box.innerHTML='讀取失敗：'+mlEsc(e.message); }
+}
+function mlOpenList(id){
+  document.getElementById('mlMulti').style.display='none';
+  const sel=document.getElementById('mlSelect'); if(sel){ if(![...sel.options].some(o=>o.value===id)){ const l=ML.lists.find(x=>x.id===id); const o=document.createElement('option'); o.value=id; o.textContent=l?l.title:id; sel.appendChild(o);} sel.value=id; }
+  mlSetFilter('all'); mlLoad(id);
 }
 async function mlMultiSet(id,on,el){
   el.disabled=true;
@@ -4669,7 +4674,7 @@ function mlRender(){
   const items=mlListItems();
   mlQbar();
   document.getElementById('mlCount').textContent=`已覆盤 ${d.reviewed} / ${d.total} 支`+(q?`，符合 ${items.length} 支`:'');
-  if(!items.length){ box.innerHTML='<div class="ml-empty">沒有符合的影片</div>'; return; }
+  if(!items.length){ const fl={done:'已覆盤',todo:'未覆盤',queued:'待辨識',short:'短棋譜'}[ML.filter]; box.innerHTML='<div class="ml-empty">沒有符合的影片'+(fl?'（目前篩選「'+fl+'」）<br><button type="button" class="ml-g" onclick="mlSetFilter(\'all\')">顯示全部 '+((d.items||[]).length)+' 支</button>':'')+'</div>'; return; }
   box.innerHTML=items.map(it=>mlRowHtml(it,it.index)).join('');
 }
 function mlPass(it){ const n=(it.games||[]).length; if(ML.filter==='short') return mlHasShort(it); return ML.filter==='all' || (ML.filter==='done'?n:(ML.filter==='queued'?it.queued:!n)); }
@@ -4758,6 +4763,7 @@ document.addEventListener('click',e=>{
   const b=e.target.closest('#mlFilter button'); if(!b) return;
   ML.filter=b.dataset.f; document.querySelectorAll('#mlFilter button').forEach(x=>x.classList.toggle('on',x===b)); mlRender();
 });
+function mlSetFilter(f){ ML.filter=f; document.querySelectorAll('#mlFilter button').forEach(x=>x.classList.toggle('on',x.dataset.f===f)); mlRender(); }
 document.addEventListener('input',e=>{ if(e.target&&e.target.id==='mlQ'&&(ML.view==='list'||ML.view==='tags')) mlRender(); });
 function mlFindItem(videoId){ return [].concat(ML.data&&ML.data.items||[], ML.search&&ML.search.items||[]).find(x=>x.videoId===videoId); }
 function mlIsYt(v){ return /^[\w-]{11}$/.test(String(v||'')); }
