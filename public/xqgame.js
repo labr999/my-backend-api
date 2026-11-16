@@ -115,19 +115,23 @@
 
   /* V2.9.30：從 from 局面走到 to 局面（紅先、輪流走），只動「所在格跟目標不同」的子；
    * 每步最多修正 2 格，剩餘差異 > 2×剩餘步數就剪掉。找不到或太多可能就回 null。 */
-  function bridge(from, to, maxPly) {
+  /* V2.9.30／V2.9.31：從 from 局面推算到畫面 rows（'x'＝被擋住、不限制），side0 先走、輪流走。
+   * 只動「所在格跟畫面不同（或被擋住）」的子；每步最多修正 2 格，剩餘差異 > 2×剩餘步數就剪掉。 */
+  function bridge(from, rows, maxPly, side0, budget) {
+    side0 = side0 || 'w'; budget = budget || 150000;
     const red = x => !!x && x === x.toUpperCase();
-    let tR = 0, tB = 0; for (let r = 0; r < 10; r++) for (let c = 0; c < 9; c++) { const x = to.b[r][c]; if (x) { if (red(x)) tR++; else tB++; } }
-    // 下界：每方至少要走「放錯格的子 − 會被吃掉的子」步
+    let hidden = 0, tR = 0, tB = 0;
+    for (let r = 0; r < 10; r++) for (let c = 0; c < 9; c++) { const o = rows[r][c]; if (o === 'x') hidden++; else if (o !== '.') { if (red(o)) tR++; else tB++; } }
     const need = q => { let wR = 0, wB = 0, nR = 0, nB = 0, d = 0;
-      for (let r = 0; r < 10; r++) for (let c = 0; c < 9; c++) { const x = q.b[r][c], y = to.b[r][c] || null; if (x) { if (red(x)) nR++; else nB++; } if ((x || null) !== y) { d++; if (x) { if (red(x)) wR++; else wB++; } } }
+      for (let r = 0; r < 10; r++) for (let c = 0; c < 9; c++) { const x = q.b[r][c], o = rows[r][c]; if (x) { if (red(x)) nR++; else nB++; } if (o !== 'x' && (x || '.') !== o) { d++; if (x) { if (red(x)) wR++; else wB++; } } }
+      if (hidden) return { d, R: 0, B: 0 };
       if (nR < tR || nB < tB) return null; return { d, R: Math.max(0, wR - (nR - tR)), B: Math.max(0, wB - (nB - tB)) }; };
-    const bad = (q, r, c) => (q.b[r][c] || null) !== (to.b[r][c] || null);
+    const bad = (q, r, c) => rows[r][c] === 'x' || (q.b[r][c] || '.') !== rows[r][c];
     let nodes = 0;
     const dfs = (q, side, left, path) => {
       const n = need(q); if (!n) return null; if (n.d === 0) return path;
-      if (left === 0 || ++nodes > 150000) return null;
-      const mine = side === 'w' ? Math.ceil(left / 2) : Math.ceil(left / 2), his = Math.floor(left / 2);
+      if (left === 0 || n.d > 2 * left || ++nodes > budget) return null;
+      const mine = Math.ceil(left / 2), his = Math.floor(left / 2);
       if ((side === 'w' ? n.R : n.B) > mine || (side === 'w' ? n.B : n.R) > his) return null;
       for (const mv of legal(q, side)) {
         if (!bad(q, mv[0][0], mv[0][1])) continue;
@@ -136,7 +140,7 @@
       }
       return null;
     };
-    for (let ply = 1; ply <= maxPly; ply++) { const r = dfs(from, 'w', ply, []); if (r) return r; if (nodes > 150000) return null; }
+    for (let ply = 1; ply <= maxPly; ply++) { const r = dfs(from, side0, ply, []); if (r) return r; if (nodes > budget) return null; }
     return null;
   }
 
@@ -160,7 +164,7 @@
     }
     feed(rows, t) {
       const hid = hiddenCount(rows);
-      if (hid > 24) return null; // V2.9.30：原本 >12 就整張丟掉，邊路常被讀成「?」時會漏掉大部分畫面
+      if (hid > 50) return null; // V2.9.30／31：原本 >12 就整張丟掉；主播擋住半盤也要能用
       if (!this.cur && mismatch(rows, this.start) <= 4) this.sawStart = true; // V2.9.30：看過像開局的畫面（邊路常誤讀）
       if (sameObs(rows, this.prev)) this.stable++; else this.stable = 1;
       this.prev = rows;
@@ -172,7 +176,7 @@
           const p = rowsToPos(rows);
           if (sane(p)) {
             // V2.9.30：先前看過開局 → 試著從開局推算到這個局面，把沒看清楚的前幾步補回來
-            const path = this.sawStart ? bridge(this.start, p, 10) : null;
+            const path = this.sawStart ? bridge(this.start, rows, 10, 'w') : null;
             if (path && path.length) { this._newSeg(this.start, t, false); for (const [mv, sd] of path) this._apply(mv, t, sd); this.bridged = path.length; return 'start-bridge'; }
             this._newSeg(p, t, true); return 'setup';
           }
@@ -219,7 +223,16 @@
       if (best && best.d === 1 && best.n === 1 && d0 >= 3) { this._apply(best.mv, t, best.side); return 'move'; }
       // 新的一盤或擺局
       if (mismatch(rows, this.start) <= 3) { if (s.moves.length) { this._newSeg(this.start, t, false); return 'newgame'; } return null; }
-      if (this.stable >= 3 && hiddenCount(rows) === 0 && d0 >= 4) { const p = rowsToPos(rows); if (sane(p)) { this._newSeg(p, t, true); return 'setup'; } }
+      // V2.9.31：退回好幾步（老師倒回前面講解）
+      for (let k = s.hist.length - 3; k >= 0; k--) if (mismatch(rows, s.hist[k]) === 0 && hid <= 12) {
+        const n = s.hist.length - 1 - k; s.hist.length = k + 1; s.moves.length = k; s.pos = copy(s.hist[k]); this.takebacks += n; return 'takeback';
+      }
+      // V2.9.31：被主播擋住或走太快 → 畫面穩定時從目前局面推算（最多 8 步，被擋的格子不限制）
+      if (this.stable === 3 && d0 >= 2 && hid <= 40) {
+        const path = bridge(s.pos, rows, 8, s.turnKnown ? s.pos.turn : 'w', 4000);
+        if (path && path.length) { for (const [mv, sd] of path) this._apply(mv, t, sd); this.bridged = path.length; return 'bridge'; }
+      }
+      if (this.stable >= 3 && hid === 0 && d0 >= 4) { const p = rowsToPos(rows); if (sane(p)) { this._newSeg(p, t, true); return 'setup'; } }
       return null;
     }
     games(minMoves) {

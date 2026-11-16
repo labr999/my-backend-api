@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.30';
-const DISPLAY_VERSION = 'V2.9.30';
+const APP_VERSION = '2.9.31';
+const DISPLAY_VERSION = 'V2.9.31';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
