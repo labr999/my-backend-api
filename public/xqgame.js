@@ -117,8 +117,8 @@
    * 每步最多修正 2 格，剩餘差異 > 2×剩餘步數就剪掉。找不到或太多可能就回 null。 */
   /* V2.9.30／V2.9.31：從 from 局面推算到畫面 rows（'x'＝被擋住、不限制），side0 先走、輪流走。
    * 只動「所在格跟畫面不同（或被擋住）」的子；每步最多修正 2 格，剩餘差異 > 2×剩餘步數就剪掉。 */
-  function bridge(from, rows, maxPly, side0, budget) {
-    side0 = side0 || 'w'; budget = budget || 150000;
+  function bridge(from, rows, maxPly, side0, budget, tol) {
+    side0 = side0 || 'w'; budget = budget || 150000; tol = tol || 0;
     const red = x => !!x && x === x.toUpperCase();
     let hidden = 0, tR = 0, tB = 0;
     for (let r = 0; r < 10; r++) for (let c = 0; c < 9; c++) { const o = rows[r][c]; if (o === 'x') hidden++; else if (o !== '.') { if (red(o)) tR++; else tB++; } }
@@ -129,11 +129,11 @@
     const bad = (q, r, c) => rows[r][c] === 'x' || (q.b[r][c] || '.') !== rows[r][c];
     let nodes = 0;
     const dfs = (q, side, left, path) => {
-      const n = need(q); if (!n) return null; if (n.d === 0) return path;
-      if (left === 0 || n.d > 2 * left || ++nodes > budget) return null;
+      const n = need(q); if (!n) return null; if (n.d <= tol && (tol === 0 || path.length >= 2)) return path;
+      if (left === 0 || n.d > 2 * left + tol || ++nodes > budget) return null;
       const mine = Math.ceil(left / 2), his = Math.floor(left / 2);
       if ((side === 'w' ? n.R : n.B) > mine || (side === 'w' ? n.B : n.R) > his) return null;
-      for (const mv of legal(q, side)) {
+      for (const mv of pseudo({ b: q.b, turn: side }, side)) { // 推算用快速版（不檢查送將）
         if (!bad(q, mv[0][0], mv[0][1])) continue;
         const r = dfs(make({ b: q.b, turn: side }, mv), side === 'w' ? 'b' : 'w', left - 1, path.concat([[mv, side]]));
         if (r) return r;
@@ -228,8 +228,10 @@
         const n = s.hist.length - 1 - k; s.hist.length = k + 1; s.moves.length = k; s.pos = copy(s.hist[k]); this.takebacks += n; return 'takeback';
       }
       // V2.9.31：被主播擋住或走太快 → 畫面穩定時從目前局面推算（最多 8 步，被擋的格子不限制）
-      if (this.stable === 3 && d0 >= 2 && hid <= 40) {
-        const path = bridge(s.pos, rows, 8, s.turnKnown ? s.pos.turn : 'w', 4000);
+      if (this.stable % 3 === 0 && this.stable <= 9 && d0 >= 2 && hid <= 40) {
+        // 先找完全對上的；找不到再容許 1 格誤讀（至少 2 步）
+        const sd0 = s.turnKnown ? s.pos.turn : 'w';
+        const path = bridge(s.pos, rows, 8, sd0, 4000, 0) || (hid <= 20 ? bridge(s.pos, rows, 8, sd0, 4000, 1) : null);
         if (path && path.length) { for (const [mv, sd] of path) this._apply(mv, t, sd); this.bridged = path.length; return 'bridge'; }
       }
       if (this.stable >= 3 && hid === 0 && d0 >= 4) { const p = rowsToPos(rows); if (sane(p)) { this._newSeg(p, t, true); return 'setup'; } }
