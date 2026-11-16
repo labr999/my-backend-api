@@ -63,7 +63,7 @@ button:disabled{opacity:.5}
 </main>
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
 <script src="/xqrecog.js?v=1.0"></script>
-<script src="/xqgame.js?v=1.4"></script>
+<script src="/xqgame.js?v=1.5"></script>
 <script>
 const VERSION = '1.0';
 const HF = 'https://huggingface.co/spaces/yolo12138/Chinese_Chess_Recognition/resolve/4bcaf91777effa645040ee76d008d45c2ffc03f3/onnx/';
@@ -190,7 +190,7 @@ $('go').onclick = async () => {
       let main = -1, bno = 0, gi = 0;
       for (const g of out.games) {
         let tag;
-        if (g.setup && main >= 0) { bno++; tag = '分支' + bno; } else { tag = '第' + (gi + 1) + '盤'; if (!g.setup) main = gi; }
+        if (g.setup && g.cont && main >= 0) { bno++; tag = '分支' + bno + '（同盤中段接續）'; } else if (g.setup && main >= 0) { bno++; tag = '分支' + bno; } else { tag = '第' + (gi + 1) + '盤'; if (!g.setup) main = gi; }
         let up = '';
         if ($('upload').checked) {
           try { const id = await uploadGame(f, g, gi, g.setup && main >= 0 ? bno : 0, out.host, out.takebacks); up = ' <span class="ok">↑ 已上傳（編號 ' + id + '）</span>'; }

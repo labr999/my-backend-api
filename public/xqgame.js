@@ -110,6 +110,7 @@
     for (let r = 0; r < 10; r++) for (let c = 0; c < 9; c++) { const o = rows[r][c]; if (o === 'x') continue; const p = pos.b[r][c] || '.'; if (o !== p) d++; }
     return d;
   }
+  function morePieces(p, q) { const c = {}; for (let r = 0; r < 10; r++) for (let x = 0; x < 9; x++) { if (q.b[r][x]) c[q.b[r][x]] = (c[q.b[r][x]] || 0) + 1; if (p.b[r][x]) c[p.b[r][x]] = (c[p.b[r][x]] || 0) - 1; } return Object.values(c).some(v => v < 0); }
   const hiddenCount = rows => rows.reduce((n, s) => n + (s.match(/x/g) || []).length, 0);
   function sameObs(a, b) { if (!a || !b) return false; for (let r = 0; r < 10; r++) for (let c = 0; c < 9; c++) { const x = a[r][c], y = b[r][c]; if (x !== 'x' && y !== 'x' && x !== y) return false; } return true; }
 
@@ -274,7 +275,33 @@
         const path = bridge(s.pos, rows, 8, sd0, 4000, 0) || (hid <= 20 ? bridge(s.pos, rows, 8, sd0, 4000, 1) : null);
         if (path && path.length) { for (const [mv, sd] of path) this._apply(mv, t, sd); this.bridged = path.length; return 'bridge'; }
       }
-      if (this.stable >= 3 && hid === 0 && d0 >= 4) { const p = rowsToPos(rows); if (sane(p)) { this._newSeg(p, t, true); return 'setup'; } }
+      // V2.9.41：對局中途漏看太多步（畫面切走、主播擋住）→ 先試更深的推算（最多 14 步、也試從前幾步重來），不要馬上切成「中局擺子」
+      if (s.moves.length && hid <= 12 && d0 >= 3 && (this.stable === 2 || this.stable === 6 || this.stable === 11) && this.stable <= 12) {
+        const r = this._recover(rows, t); if (r) return r;
+      }
+      if (this.stable >= 3 && hid === 0 && d0 >= 4) {
+        const p = rowsToPos(rows);
+        if (sane(p)) {
+          // 盤面只少子、沒有多出來的子 → 多半是同一盤繼續走，不是老師擺新局面：多等幾次畫面再決定
+          const cont = s.moves.length > 0 && !morePieces(p, s.pos);
+          if (cont && this.stable < 12) return null;
+          this._newSeg(p, t, true); if (cont) this.cur.cont = true; return 'setup';
+        }
+      }
+      return null;
+    }
+    _recover(rows, t) {
+      const s = this.cur;
+      for (let back = 0; back <= 2 && back < s.hist.length; back++) {
+        const k = s.hist.length - 1 - back, from = s.hist[k];
+        const side = back === 0 ? (s.turnKnown ? s.pos.turn : 'w') : s.moves[k].side;
+        const path = bridge(from, rows, 14, side, 12000, 0) || (back === 0 ? bridge(from, rows, 14, side, 6000, 1) : null);
+        if (path && path.length) {
+          if (back) { s.hist.length = k + 1; s.moves.length = k; s.pos = copy(s.hist[k]); }
+          for (const [mv, sd] of path) this._apply(mv, t, sd);
+          this.bridged = path.length; this.recovered = (this.recovered || 0) + 1; return 'recover';
+        }
+      }
       return null;
     }
     games(minMoves) {
@@ -283,7 +310,7 @@
         const mate = isMate(g.pos);
         let win = null, reason = '未知（影片版沒有引擎判定）';
         if (mate) { win = g.pos.turn === 'w' ? 'b' : 'w'; reason = '將死／困斃'; }
-        return { setup: g.setup, startFen: toFen(g.startPos), fen: toFen(g.pos), moves: g.moves.map(m => m.cn), times: g.moves.map(m => Math.round(m.t * 10) / 10), exact: g.moves.map(m => ({ from: [m.mv[0][1], m.mv[0][0]], to: [m.mv[1][1], m.mv[1][0]], notation: m.cn })), win, reason, t0: g.t0 };
+        return { setup: g.setup, cont: !!g.cont, startFen: toFen(g.startPos), fen: toFen(g.pos), moves: g.moves.map(m => m.cn), times: g.moves.map(m => Math.round(m.t * 10) / 10), exact: g.moves.map(m => ({ from: [m.mv[0][1], m.mv[0][0]], to: [m.mv[1][1], m.mv[1][0]], notation: m.cn })), win, reason, t0: g.t0 };
       });
     }
   }
