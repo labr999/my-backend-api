@@ -113,6 +113,33 @@
   const hiddenCount = rows => rows.reduce((n, s) => n + (s.match(/x/g) || []).length, 0);
   function sameObs(a, b) { if (!a || !b) return false; for (let r = 0; r < 10; r++) for (let c = 0; c < 9; c++) { const x = a[r][c], y = b[r][c]; if (x !== 'x' && y !== 'x' && x !== y) return false; } return true; }
 
+  /* V2.9.30：從 from 局面走到 to 局面（紅先、輪流走），只動「所在格跟目標不同」的子；
+   * 每步最多修正 2 格，剩餘差異 > 2×剩餘步數就剪掉。找不到或太多可能就回 null。 */
+  function bridge(from, to, maxPly) {
+    const red = x => !!x && x === x.toUpperCase();
+    let tR = 0, tB = 0; for (let r = 0; r < 10; r++) for (let c = 0; c < 9; c++) { const x = to.b[r][c]; if (x) { if (red(x)) tR++; else tB++; } }
+    // 下界：每方至少要走「放錯格的子 − 會被吃掉的子」步
+    const need = q => { let wR = 0, wB = 0, nR = 0, nB = 0, d = 0;
+      for (let r = 0; r < 10; r++) for (let c = 0; c < 9; c++) { const x = q.b[r][c], y = to.b[r][c] || null; if (x) { if (red(x)) nR++; else nB++; } if ((x || null) !== y) { d++; if (x) { if (red(x)) wR++; else wB++; } } }
+      if (nR < tR || nB < tB) return null; return { d, R: Math.max(0, wR - (nR - tR)), B: Math.max(0, wB - (nB - tB)) }; };
+    const bad = (q, r, c) => (q.b[r][c] || null) !== (to.b[r][c] || null);
+    let nodes = 0;
+    const dfs = (q, side, left, path) => {
+      const n = need(q); if (!n) return null; if (n.d === 0) return path;
+      if (left === 0 || ++nodes > 150000) return null;
+      const mine = side === 'w' ? Math.ceil(left / 2) : Math.ceil(left / 2), his = Math.floor(left / 2);
+      if ((side === 'w' ? n.R : n.B) > mine || (side === 'w' ? n.B : n.R) > his) return null;
+      for (const mv of legal(q, side)) {
+        if (!bad(q, mv[0][0], mv[0][1])) continue;
+        const r = dfs(make({ b: q.b, turn: side }, mv), side === 'w' ? 'b' : 'w', left - 1, path.concat([[mv, side]]));
+        if (r) return r;
+      }
+      return null;
+    };
+    for (let ply = 1; ply <= maxPly; ply++) { const r = dfs(from, 'w', ply, []); if (r) return r; if (nodes > 150000) return null; }
+    return null;
+  }
+
   /* 追蹤器：每個取樣畫面餵一次 rows（模型 10 列字串）。
    * 一盤＝一個 segment：{startFen, moves:[{mv,cn,t}], branch}。
    *  - 畫面穩定（連續 2 次相同）才判斷。
@@ -132,14 +159,24 @@
       const cn = moveCn(s.pos, mv); s.pos = make(s.pos, mv); s.hist.push(copy(s.pos)); s.moves.push({ mv, cn, t });
     }
     feed(rows, t) {
-      if (hiddenCount(rows) > 12) return null;
+      const hid = hiddenCount(rows);
+      if (hid > 24) return null; // V2.9.30：原本 >12 就整張丟掉，邊路常被讀成「?」時會漏掉大部分畫面
+      if (!this.cur && mismatch(rows, this.start) <= 4) this.sawStart = true; // V2.9.30：看過像開局的畫面（邊路常誤讀）
       if (sameObs(rows, this.prev)) this.stable++; else this.stable = 1;
       this.prev = rows;
       if (this.stable < 2) return null;
       const s = this.cur;
       if (!s) {
-        if (mismatch(rows, this.start) <= 2) { this._newSeg(this.start, t, false); return 'start'; }
-        if (this.stable >= 3 && hiddenCount(rows) === 0) { const p = rowsToPos(rows); if (sane(p)) { this._newSeg(p, t, true); return 'setup'; } }
+        if (mismatch(rows, this.start) <= 3) { this._newSeg(this.start, t, false); return 'start'; }
+        if (this.stable >= 3 && hiddenCount(rows) === 0) {
+          const p = rowsToPos(rows);
+          if (sane(p)) {
+            // V2.9.30：先前看過開局 → 試著從開局推算到這個局面，把沒看清楚的前幾步補回來
+            const path = this.sawStart ? bridge(this.start, p, 10) : null;
+            if (path && path.length) { this._newSeg(this.start, t, false); for (const [mv, sd] of path) this._apply(mv, t, sd); this.bridged = path.length; return 'start-bridge'; }
+            this._newSeg(p, t, true); return 'setup';
+          }
+        }
         return null;
       }
       const d0 = mismatch(rows, s.pos);
@@ -154,7 +191,7 @@
         const q = make({ b: s.pos.b, turn: side }, mv), d = mismatch(rows, q);
         if (!best || d < best.d) best = { d, mv, side, n: 1 }; else if (d === best.d) best.n++;
       }
-      if (best && best.d === 0) { this._apply(best.mv, t, best.side); return 'move'; }
+      if (best && best.d === 0 && (hid <= 12 || best.n === 1)) { this._apply(best.mv, t, best.side); return 'move'; }
       // 同一方連走（老師示範、或之前漏看造成先後手錯位）：另一方一步就能完全對上
       if (s.turnKnown) {
         const other = s.pos.turn === 'w' ? 'b' : 'w';
@@ -181,7 +218,7 @@
       // 容許一格誤讀（唯一最佳、且局面差異夠大）
       if (best && best.d === 1 && best.n === 1 && d0 >= 3) { this._apply(best.mv, t, best.side); return 'move'; }
       // 新的一盤或擺局
-      if (mismatch(rows, this.start) <= 2) { if (s.moves.length) { this._newSeg(this.start, t, false); return 'newgame'; } return null; }
+      if (mismatch(rows, this.start) <= 3) { if (s.moves.length) { this._newSeg(this.start, t, false); return 'newgame'; } return null; }
       if (this.stable >= 3 && hiddenCount(rows) === 0 && d0 >= 4) { const p = rowsToPos(rows); if (sane(p)) { this._newSeg(p, t, true); return 'setup'; } }
       return null;
     }
