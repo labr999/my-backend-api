@@ -43,7 +43,8 @@ button:disabled{opacity:.5}
   <label>從第 <input id="from" type="number" value="0" min="0"> 秒</label>
   <label>到第 <input id="to" type="number" value="0" min="0"> 秒（0＝到結尾）</label><br>
   <label><input id="upload" type="checkbox" checked> 辨識完上傳到小棋聖棋譜倉庫</label>
-  <label>標題 <input id="title" type="text" placeholder="預設用檔名" style="width:260px"></label>
+  <label>標題 <input id="title" type="text" placeholder="預設用檔名" style="width:260px"></label><br>
+  <label>對應影片 <select id="vid" style="max-width:420px"><option value="">自動（依檔名對到清單影片）</option></select></label> <small>檔名看不出是哪支（例如 videoplayback.mp4）時請選；辨識成功會從失敗清單移出</small>
   <div class="hint">第一次使用會下載辨識模型約 40 MB（之後存在 iPad 裡）。辨識時請讓螢幕保持亮著、不要切到別的 App。</div>
   <div style="margin-top:10px"><button id="go" disabled>開始辨識</button> <button id="stop" class="sec" disabled>停止</button></div>
   <div class="bar"><div id="pbar"></div></div>
@@ -162,7 +163,7 @@ async function uploadGame(file, g, gi, bno, host, takebacks) {
     tokens: g.moves, moves: g.moves, exactMoves: g.setup ? g.exact : [],
     source: 'video-scan', format: 'ipad-scan ' + VERSION, sourceUrl: '', detailUrl: '',
     fen: g.fen, validation: g.reason,
-    rawExport: JSON.stringify(Object.assign({ videoId: 'ipad-' + stem.slice(0, 60), file: file.name, moveTimes: g.times, game: gi, host, takebacks, via: 'ipad-scan' }, bno ? { branch: bno } : {}, g.setup ? { startFen: g.startFen } : {}))
+    rawExport: JSON.stringify(Object.assign({ videoId: $('vid').value || ('ipad-' + stem.slice(0, 60)), file: file.name, moveTimes: g.times, game: gi, host, takebacks, via: 'ipad-scan' }, bno ? { branch: bno } : {}, g.setup ? { startFen: g.startFen } : {}))
   };
   for (let k = 0; k < 3; k++) {
     try {
@@ -208,6 +209,19 @@ $('file').onchange = () => { const n = ($('file').files || []).length; status(n 
 (function init() {
   if (typeof ort === 'undefined') { status('辨識程式庫載入失敗，請檢查網路後重新整理'); return; }
   $('go').disabled = false; status('請選影片');
+})();
+
+// V2.9.37：對應影片下拉選單（辨識失敗影片＋待辨識影片）
+(async function fillVid() {
+  try {
+    const sel = $('vid'), seen = new Set();
+    const add = (grp, items) => { const og = document.createElement('optgroup'); og.label = grp;
+      for (const it of items) { if (!it.videoId || seen.has(it.videoId) || /^line-/.test(it.videoId)) continue; seen.add(it.videoId);
+        const o = document.createElement('option'); o.value = it.videoId; o.textContent = (it.title || it.videoId).slice(0, 60); og.appendChild(o); }
+      if (og.children.length) sel.appendChild(og); };
+    const f = await (await fetch('/api/playlists/failed-videos', { cache: 'no-store' })).json(); add('辨識失敗影片', f.items || []);
+    const q = await (await fetch('/api/queue', { cache: 'no-store' })).json(); add('待辨識影片', q.items || []);
+  } catch (e) {}
 })();
 </script>
 </body></html>

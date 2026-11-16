@@ -33,7 +33,7 @@
 <meta name="theme-color" content="#8B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="象棋開局">
-<title>象棋小棋聖 V2.9.36 ｜ 象棋開局譜</title>
+<title>象棋小棋聖 V2.9.37 ｜ 象棋開局譜</title>
 <style>
 
 :root{
@@ -328,7 +328,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 <meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
-<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.36</span> <span id="xq-version-status">●</span></div>
+<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.37</span> <span id="xq-version-status">●</span></div>
 <script>
 (async()=>{try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();const el=document.getElementById('xq-version-status');if(el)el.textContent=d.ok?'● V'+d.version:'● OFFLINE';}catch(e){}})();
 </script>
@@ -4587,7 +4587,7 @@ async function mlMultiOpen(){
       '<div style="margin-top:6px"><button type="button" class="ml-g" onclick="document.getElementById(\'mlMulti\').style.display=\'none\'">完成</button> <button type="button" class="ml-g ml-del" onclick="mlDelCheckedLists()" title="刪除方框打勾的清單（已辨識棋譜保留）">🗑 刪除勾選的清單</button></div>';
   }catch(e){ box.innerHTML='讀取失敗：'+mlEsc(e.message); }
 }
-/* V2.9.36：多清單勾選裡一次刪除打勾的清單 */
+/* V2.9.37：多清單勾選裡一次刪除打勾的清單 */
 async function mlDelCheckedLists(){
   const ids=[...document.querySelectorAll('#mlMulti input[type=checkbox][data-pl]:checked')].map(x=>x.dataset.pl);
   if(!ids.length){ toast('先在方框勾選要刪除的清單'); return; }
@@ -4708,7 +4708,7 @@ async function mlRedo(ids){
     toast('已刪除 '+d.deleted+' 盤，'+d.queued+' 支排入重新辨識'); await mlLoad(ML.cur); }
   catch(e){ toast('失敗：'+e.message); }
 }
-/* V2.9.36：刪除清單裡的影片、刪除整個清單（已辨識的棋譜都保留） */
+/* V2.9.37：刪除清單裡的影片、刪除整個清單（已辨識的棋譜都保留） */
 async function mlRemoveVideos(ids){
   if(!ML.cur||!ids.length) return;
   const one=ids.length===1&&ML.data&&ML.data.items.find(x=>x.videoId===ids[0]);
