@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.45';
-const DISPLAY_VERSION = 'V2.9.45';
+const APP_VERSION = '2.9.47';
+const DISPLAY_VERSION = 'V2.9.47';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -1228,6 +1228,15 @@ app.post('/api/playlists/:id/remove', (q, s) => {
   const ids = new Set((Array.isArray((q.body || {}).videoIds) ? q.body.videoIds : []).map(String));
   if (!ids.size) return s.status(400).json({ error: '需要 videoIds' });
   const n = (pl.items || []).length;
+  // V2.9.46：從「辨識失敗影片」刪除 → 回到原清單（原分類）當未覆盤影片，不再被移回失敗清單
+  if (pl.id === FAIL_PL) for (const f of (pl.items || []).filter(it => ids.has(String(it.videoId)))) {
+    const src = f.srcPl && db.playlists.find(x => x.id === f.srcPl); if (!src) continue;
+    src.items = src.items || [];
+    let o = src.items.find(x => x.videoId === f.videoId);
+    if (!o) { o = { videoId: f.videoId, title: f.title, index: src.items.length + 1, queued: false, redo: false }; if (f.url && !/^[\w-]{11}$/.test(f.videoId)) { o.url = f.url; o.site = f.site || ''; } src.items.push(o); }
+    if (src.removedIds) src.removedIds = src.removedIds.filter(x => x !== f.videoId);
+    o.status = ''; o.note = ''; o.queued = false; o.redo = false; o.time = new Date().toISOString(); src.updated_at = o.time;
+  }
   pl.items = (pl.items || []).filter(it => !ids.has(String(it.videoId)));
   const removed = n - pl.items.length;
   if (removed) {

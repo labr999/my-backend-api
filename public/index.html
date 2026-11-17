@@ -33,7 +33,7 @@
 <meta name="theme-color" content="#8B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="象棋開局">
-<title>象棋小棋聖 V2.9.45 ｜ 象棋開局譜</title>
+<title>象棋小棋聖 V2.9.47 ｜ 象棋開局譜</title>
 <style>
 
 :root{
@@ -328,7 +328,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
 <meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
-<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.45</span> <span id="xq-version-status">●</span></div>
+<div id="xq-version-badge" style="position:fixed;top:10px;right:10px;z-index:99999;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:600 12px/1.2 system-ui, sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2)">象棋小棋聖 <span style="opacity:.75">V2.9.47</span> <span id="xq-version-status">●</span></div>
 <script>
 (async()=>{try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();const el=document.getElementById('xq-version-status');if(el)el.textContent=d.ok?'● V'+d.version:'● OFFLINE';}catch(e){}})();
 </script>
@@ -2769,10 +2769,22 @@ function buildCatGrid(){
     const entry=DATA[curSide][cat];
     const card=document.createElement('div');card.className='category-card'+(cat===curCat?' active':'');
     card.innerHTML=`<span class="ci">${iconFor(cat)}</span><div class="cn">${cat}</div><div class="cc">${contentCount(entry)} 盤</div>`;
-    card.addEventListener('click',()=>{curCat=cat;buildCatGrid();buildLineList();});
+    card.addEventListener('click',()=>{curCat=cat;buildCatGrid();const ll=document.getElementById('lineList');if(ll&&ll.scrollIntoView)ll.scrollIntoView({behavior:'smooth',block:'start'});});
     grid.appendChild(card);
   });
-  if(curCat&&DATA[curSide][curCat])buildLineList();
+  if(curCat&&DATA[curSide][curCat])buildLineList(); else { catGridShow(true); const ll=document.getElementById('lineList'); if(ll) ll.innerHTML=''; }
+}
+/* V2.9.47：點了分類就只顯示該分類的棋譜，所有分類收起；「← 所有分類」再展開 */
+function catGridShow(show){
+  const grid=document.getElementById('catGrid'), list=document.getElementById('lineList'); if(!grid||!list) return;
+  grid.style.display=show?'':'none';
+  let bar=document.getElementById('catBackBar');
+  if(!bar){bar=document.createElement('div');bar.id='catBackBar';bar.style.cssText='display:flex;align-items:center;gap:10px;margin:4px 0 10px';
+    bar.innerHTML='<button type="button" id="btnCatBack" style="padding:6px 14px;border:none;border-radius:10px;background:var(--surface-variant);color:var(--primary);font-weight:700;cursor:pointer">← 所有分類</button><b id="catBackName" style="color:var(--primary)"></b>';
+    list.parentNode.insertBefore(bar,list);
+    bar.querySelector('#btnCatBack').addEventListener('click',()=>{curCat=null;document.getElementById('lineList').innerHTML='';catGridShow(true);buildCatGrid();grid.scrollIntoView&&grid.scrollIntoView({behavior:'smooth',block:'start'});});}
+  bar.style.display=show?'none':'flex';
+  const nm=document.getElementById('catBackName'); if(nm) nm.textContent=show?'':(curSide+'｜'+(curCat||''));
 }
 
 function lineTag(l){if(l.moves&&l.moves.length)return '文字棋譜';if(l.playlistId)return '播放清單';if(l.videoUrl)return '影片';return '未收錄';}
@@ -2902,7 +2914,8 @@ function promptReclassifyCurrentGame() {
 function buildLineList(){
   const list=document.getElementById('lineList');list.innerHTML='';
   const entry=DATA[curSide][curCat];
-  if (!entry) return;
+  if (!entry) { catGridShow(true); return; }
+  catGridShow(false);
   // 三組：定式/變化文字棋譜、大師對局、影片/播放清單
   const scores=[], masters=[], videos=[];
   entry.lines.forEach((l,i)=>{
