@@ -206,7 +206,7 @@
         if (cnt === 1) { this._apply(hit[0], t, hit[1]); return 'move'; }
         // 幾乎整盤看得清楚、但一次差了好幾步 → 推算（完全對上才算）
         if (hid <= 8 && mismatch(rows, s.pos) >= 3) {
-          const path = bridge(s.pos, rows, 8, s.turnKnown ? s.pos.turn : 'w', 4000, 0);
+          const path = this._undoBetter(bridge(s.pos, rows, 8, s.turnKnown ? s.pos.turn : 'w', 4000, 0), rows, t, 8, 4000, 0);
           if (path && path.length) { for (const [mv, sd] of path) this._apply(mv, t, sd); this.bridged = path.length; return 'bridge'; }
         }
         return null;
@@ -225,7 +225,7 @@
         return null;
       }
       const d0 = mismatch(rows, s.pos);
-      if (d0 === 0) return null;
+      if (d0 === 0) { if (s.moves.length) s.moves[s.moves.length - 1].seen = true; return null; } // V2.9.44：這一步的局面有穩定看到過
       // 退回上一步
       if (s.moves.length && mismatch(rows, s.hist[s.hist.length - 2]) === 0) {
         s.hist.pop(); s.moves.pop(); s.pos = copy(s.hist[s.hist.length - 1]); this.takebacks++; return 'takeback';
@@ -272,7 +272,8 @@
       if ((this.stable === 2 || this.stable % 3 === 0) && this.stable <= 9 && d0 >= 2 && hid <= 40) {
         // 先找完全對上的；找不到再容許 1 格誤讀（至少 2 步）
         const sd0 = s.turnKnown ? s.pos.turn : 'w';
-        const path = bridge(s.pos, rows, 8, sd0, 4000, 0) || (hid <= 20 ? bridge(s.pos, rows, 8, sd0, 4000, 1) : null);
+        let path = this._undoBetter(bridge(s.pos, rows, 8, sd0, 4000, 0), rows, t, 8, 4000, 0);
+        if (!path && hid <= 20) path = bridge(s.pos, rows, 8, sd0, 4000, 1);
         if (path && path.length) { for (const [mv, sd] of path) this._apply(mv, t, sd); this.bridged = path.length; return 'bridge'; }
       }
       // V2.9.41：對局中途漏看太多步（畫面切走、主播擋住）→ 先試更深的推算（最多 14 步、也試從前幾步重來），不要馬上切成「中局擺子」
@@ -289,6 +290,19 @@
         }
       }
       return null;
+    }
+    /* V2.9.44：剛記下的那一步可能是動畫滑行中途的畫面（例：炮二平五滑過三路被記成炮二平三）。
+     * 最後一步的局面從沒穩定出現過、推算又讓同一顆子從剛落點走掉時，試「撤掉最後一步重推」，總步數較少就改用。 */
+    _undoBetter(path, rows, t, maxPly, budget, tol) {
+      const s = this.cur; if (!path || !s || !s.moves.length) return path;
+      const last = s.moves[s.moves.length - 1]; if (last.seen || t - last.t > 4 || last.cap) return path;
+      // 只處理「推算裡同一顆子又從剛落點走掉」的情形（滑行中途的特徵）
+      if (!path.some(([mv, sd]) => sd === last.side && mv[0][0] === last.mv[1][0] && mv[0][1] === last.mv[1][1])) return path;
+      const before = s.hist[s.hist.length - 2];
+      const alt = bridge(before, rows, Math.min(maxPly, path.length + 1), last.side, budget, tol);
+      if (!alt || !alt.length || alt.length > path.length) return path;
+      s.hist.pop(); s.moves.pop(); s.pos = copy(before); this.undone = (this.undone || 0) + 1;
+      return alt;
     }
     _recover(rows, t) {
       const s = this.cur;
