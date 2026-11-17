@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.42';
-const DISPLAY_VERSION = 'V2.9.42';
+const APP_VERSION = '2.9.43';
+const DISPLAY_VERSION = 'V2.9.43';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -1163,7 +1163,7 @@ app.post('/api/line/webhook', async (q, s) => {
         if (urls.length) {
           const r = importVideos(urls, rec.text.replace(/https?:\/\/\S+/g, '').trim().slice(0, 120));
           rec.videos = [...r.added.map(x => x.videoId), ...r.again.map(x => x.videoId)];
-          if (r.added.length) await lineReply(ev.replyToken, '♟ 已排入小棋聖辨識 ' + r.added.length + ' 支影片');
+          // V2.9.43：使用者要求群組不顯示「已排入辨識」回覆，靜默排入
         }
       } else if (m.type === 'video') { rec.text = '（群組內上傳影片檔，機器人無法排入辨識，已放到「辨識失敗影片」；請改貼影片網址）'; lineFileFailed(rec); }
       else if (m.type === 'image') rec.text = '（圖片）';
