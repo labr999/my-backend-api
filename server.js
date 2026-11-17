@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.41';
-const DISPLAY_VERSION = 'V2.9.41';
+const APP_VERSION = '2.9.42';
+const DISPLAY_VERSION = 'V2.9.42';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -144,7 +144,9 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 app.use(express.json({ limit: '20mb', verify: (req, res, buf) => { if (req.originalUrl && req.originalUrl.startsWith('/api/line/')) req.rawBody = buf; } }));
-app.use(express.static(path.join(ROOT, 'public')));
+/* V2.9.42：Render 免費 5 GB 流量用完被停 → 所有回應 gzip 壓縮（網頁約省 75%），靜態 js 快取 1 天、網頁靠 ETag 回 304 */
+app.use(require('compression')());
+app.use(express.static(path.join(ROOT, 'public'), { etag: true, lastModified: true, setHeaders: (res, p) => { if (/\.js$/.test(p)) res.setHeader('Cache-Control', 'public, max-age=86400'); else res.setHeader('Cache-Control', 'no-cache'); } }));
 
 function ensurePlayer(name, title = '') {
   name = String(name || '').trim();
