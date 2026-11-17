@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.48';
-const DISPLAY_VERSION = 'V2.9.48';
+const APP_VERSION = '2.9.49';
+const DISPLAY_VERSION = 'V2.9.49';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -870,6 +870,20 @@ app.get('/api/playlists/:id', (q, s) => {
   const idx = videoGamesIndex();
   s.json({ ...plSummary(pl, idx), items: (pl.items || []).map(it => ({ ...it, games: idx[it.videoId] || [], tag: db.videoTags[it.videoId] || null })) });
 });
+// V2.9.49：YouTube 已刪除／私人影片（標題 [Deleted video]、[Private video]）無法播放也無法辨識，一律不放進清單
+const deadTitle = t => /^\[?(deleted|private) video\]?$/i.test(String(t || '').trim());
+function purgeDead() {
+  let n = 0;
+  for (const pl of db.playlists) {
+    const dead = (pl.items || []).filter(it => deadTitle(it.title)).map(it => String(it.videoId));
+    if (!dead.length) continue;
+    pl.items = pl.items.filter(it => !deadTitle(it.title)); pl.items.forEach((it, i) => { it.index = i + 1; });
+    if (pl.id !== IMPORT_PL && pl.id !== FAIL_PL) pl.removedIds = [...new Set([...(pl.removedIds || []), ...dead])].slice(-5000);
+    n += dead.length;
+  }
+  if (n) { console.log('[pl] 移除已刪除／私人影片', n); save(); }
+  return n;
+}
 function upsertPlaylist(b, force) {
   const id = String(b.id || '').trim().slice(0, 80);
   if (!id || !Array.isArray(b.items)) throw Object.assign(new Error('需要 id 與 items'), { code: 400 });
@@ -878,7 +892,7 @@ function upsertPlaylist(b, force) {
   let pl = db.playlists.find(x => x.id === id);
   const old = {}; if (pl) for (const it of pl.items || []) old[it.videoId] = it;
   const removedIds = new Set((pl && pl.removedIds) || []);
-  const items = b.items.filter(it => it && it.videoId && !removedIds.has(String(it.videoId))).slice(0, 2000).map((it, i) => ({
+  const items = b.items.filter(it => it && it.videoId && !removedIds.has(String(it.videoId)) && !deadTitle(it.title)).slice(0, 2000).map((it, i) => ({
     videoId: String(it.videoId).slice(0, 32), title: String(it.title || it.videoId).slice(0, 200), index: i + 1,
     status: it.status != null ? String(it.status).slice(0, 40) : ((old[it.videoId] && old[it.videoId].status) || ''),
     note: (old[it.videoId] && old[it.videoId].note) || '', queued: !!(old[it.videoId] && old[it.videoId].queued), redo: !!(old[it.videoId] && old[it.videoId].redo),
@@ -920,7 +934,7 @@ async function importPlaylist(lid, knownTitle) {
     const j = await ytGet('playlistItems', { part: 'snippet', playlistId: lid, maxResults: '50', ...(pageToken ? { pageToken } : {}) });
     for (const x of j.items || []) {
       const vid = x.snippet?.resourceId?.videoId; const t = x.snippet?.title || '';
-      if (vid && !items.some(y => y.videoId === vid) && t !== 'Private video' && t !== 'Deleted video') items.push({ videoId: vid, title: t });
+      if (vid && !items.some(y => y.videoId === vid) && !deadTitle(t)) items.push({ videoId: vid, title: t });
     }
     pageToken = j.nextPageToken || ''; if (!pageToken) break;
   }
@@ -1049,6 +1063,7 @@ function removeFailed(videoId, status) {
 }
 /* V2.9.41：本機（電腦或 iPad）辨識成功、棋譜已上傳 → 自動移出辨識失敗清單（不必等清單狀態回報） */
 function sweepFailed() {
+  purgeDead();
   const fp = db.playlists.find(x => x.id === FAIL_PL); if (!fp || !fp.items.length) return 0;
   const idx = videoGamesIndex(); let n = 0;
   for (const f of [...fp.items]) {
@@ -1232,6 +1247,7 @@ app.post('/api/playlists/:id/remove', (q, s) => {
   if (pl.id === FAIL_PL) for (const f of (pl.items || []).filter(it => ids.has(String(it.videoId)))) {
     const src = f.srcPl && db.playlists.find(x => x.id === f.srcPl); if (!src) continue;
     src.items = src.items || [];
+    if (deadTitle(f.title)) { src.items = src.items.filter(x => x.videoId !== f.videoId); src.items.forEach((it, i) => { it.index = i + 1; }); src.removedIds = [...new Set([...(src.removedIds || []), f.videoId])].slice(-5000); src.updated_at = new Date().toISOString(); continue; }
     let o = src.items.find(x => x.videoId === f.videoId);
     if (!o) { o = { videoId: f.videoId, title: f.title, index: src.items.length + 1, queued: false, redo: false }; if (f.url && !/^[\w-]{11}$/.test(f.videoId)) { o.url = f.url; o.site = f.site || ''; } src.items.push(o); }
     if (src.removedIds) src.removedIds = src.removedIds.filter(x => x !== f.videoId);
@@ -1670,5 +1686,5 @@ app.use((err, req, res, next) => {
 // Express 5：SPA fallback
 app.use((req, res) => res.sendFile(path.join(ROOT, 'public', 'index.html')));
 
-loadPg().finally(() => { try { migrateFailed(); relinkAllIpad(); sweepFailed(); } catch (e) { console.error('[fail] 移轉失敗', e.message); } }).finally(() => server.listen(PORT, '0.0.0.0', () => console.log(`xiangqi-web-suite ${DISPLAY_VERSION} listening on ${PORT}（儲存：${pgReady ? 'Neon Postgres' : '本機 JSON'}）`)));
+loadPg().finally(() => { try { migrateFailed(); purgeDead(); relinkAllIpad(); sweepFailed(); } catch (e) { console.error('[fail] 移轉失敗', e.message); } }).finally(() => server.listen(PORT, '0.0.0.0', () => console.log(`xiangqi-web-suite ${DISPLAY_VERSION} listening on ${PORT}（儲存：${pgReady ? 'Neon Postgres' : '本機 JSON'}）`)));
 
