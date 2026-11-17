@@ -100,6 +100,24 @@ function loadVideo(file) {
     v.onloadedmetadata = () => res(v); v.onerror = () => rej(new Error('這個影片格式無法讀取')); v.src = URL.createObjectURL(file); });
 }
 function thumbDiff(a, b) { if (!a || !b) return 999; let s = 0; for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]); return s / a.length; }
+// V2.9.48：棋盤 90 個交叉點各取一小塊灰階（依棋盤四角內插）。舊的 48×27 縮圖整張平均，棋子移動一格（尤其吃子只換字）幾乎看不出差別，
+// 會沿用舊判讀而漏步、再被 bridge 補成錯的著法（橘中秘大列手炮：炮2平5 記成炮2平4…）。改成任何一格有變化就重新判讀。
+function cellSig(img, kp) {
+  const W = img.width, H = img.height, d = img.data, k = kp.kp, out = new Uint8Array(90 * 64);
+  const cw = Math.hypot(k[1][0] - k[0][0], k[1][1] - k[0][1]) / 8, h = Math.max(4, Math.round(cw * 0.15)), st = Math.max(1, h / 4);
+  let o = 0;
+  for (let r = 0; r < 10; r++) for (let c = 0; c < 9; c++) {
+    const u = c / 8, w = r / 9;
+    const x = (1 - u) * (1 - w) * k[0][0] + u * (1 - w) * k[1][0] + (1 - u) * w * k[2][0] + u * w * k[3][0];
+    const y = (1 - u) * (1 - w) * k[0][1] + u * (1 - w) * k[1][1] + (1 - u) * w * k[2][1] + u * w * k[3][1];
+    for (let j = 0; j < 8; j++) for (let i = 0; i < 8; i++) {
+      const xx = Math.min(W - 1, Math.max(0, Math.round(x - h + i * st))), yy = Math.min(H - 1, Math.max(0, Math.round(y - h + j * st))), q = (yy * W + xx) * 4;
+      out[o++] = (d[q] * 77 + d[q + 1] * 150 + d[q + 2] * 29) >> 8;
+    }
+  }
+  return out;
+}
+function cellDiff(a, b) { if (!a || !b || a.length !== b.length) return 999; let mx = 0; for (let c = 0; c < 90; c++) { let s = 0; for (let i = c * 64; i < c * 64 + 64; i++) s += Math.abs(a[i] - b[i]); mx = Math.max(mx, s / 64); } return mx; }
 
 async function scanFile(file, idx, n) {
   const v = await loadVideo(file);
@@ -112,7 +130,7 @@ async function scanFile(file, idx, n) {
   const portrait = H0 > W0;
   log('▶ ' + file.name + '（' + W0 + '×' + H0 + '，' + Math.round(dur) + ' 秒' + (portrait ? '，直式' : '') + '）');
   const T = new XQGame.Tracker();
-  let kp = null, kpBest = 0, kpAge = 99, lastThumb = null, lastRows = null, host = null, used = 0, reused = 0;
+  let kp = null, kpBest = 0, kpAge = 99, lastThumb = null, lastSig = null, lastRows = null, host = null, used = 0, reused = 0;
   const t_start = performance.now();
   for (let t = t0; t <= t1 && !stopFlag; t += step) {
     await seek(v, Math.min(t, Math.max(0, dur - 0.05)));
@@ -120,9 +138,10 @@ async function scanFile(file, idx, n) {
     tctx.drawImage(cv, 0, 0, 48, 27);
     const th = tctx.getImageData(0, 0, 48, 27).data;
     let rows;
-    if (lastRows && thumbDiff(th, lastThumb) < 1.5) { rows = lastRows; reused++; }
+    const img = ctx.getImageData(0, 0, W, H);
+    const sig = kp ? cellSig(img, kp) : null;
+    if (lastRows && thumbDiff(th, lastThumb) < 3 && cellDiff(sig, lastSig) < 6) { rows = lastRows; reused++; }
     else {
-      const img = ctx.getImageData(0, 0, W, H);
       if (!kp || kpAge >= 8) {
         const nk = portrait ? await bm.keypointsRefined(img) : await bm.keypoints(img), ns = Math.min(...nk.sc);
         // V2.9.31：主播擋住棋盤角落時新找到的位置不可靠 → 沿用上次的棋盤位置（鏡頭通常不動）
@@ -132,7 +151,7 @@ async function scanFile(file, idx, n) {
       kpAge++;
       const r = await bm.read(img, kp); rows = r.rows; used++;
       if (rows.join('').split('x').length - 1 > 20 && kpAge > 2) kpAge = 99; // 畫面大變（切鏡頭）就重找棋盤（找不到更好的位置會沿用舊的）
-      lastRows = rows; lastThumb = th;
+      lastRows = rows; lastThumb = th; lastSig = cellSig(img, kp);
       if (host === null && XQGame.mismatch(rows, XQGame.fromFen(XQGame.START_FEN)) <= 3) {
         const ay = (kp.kp[0][1] + kp.kp[1][1]) / 2, jy = (kp.kp[2][1] + kp.kp[3][1]) / 2;
         host = ay > jy ? '黑方' : '紅方';
