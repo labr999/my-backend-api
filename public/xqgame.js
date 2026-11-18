@@ -328,6 +328,11 @@
       });
     }
   }
-  const api = { START_FEN, fromFen, toFen, make, legal, moveCn, inCheck, sane, rowsToPos, mismatch, Tracker };
+  /* V2.9.51：兩次取樣之間差超過一步（快棋、短影片連走好幾步）→ 告訴掃描端倒回去補看中間的畫面 */
+  function needRefine(T, rows) {
+    const s = T.cur; if (!s || hiddenCount(rows) > 20) return false;
+    return mismatch(rows, s.pos) >= 3;
+  }
+  const api = { needRefine, START_FEN, fromFen, toFen, make, legal, moveCn, inCheck, sane, rowsToPos, mismatch, Tracker };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.XQGame = api;
 })(typeof self !== 'undefined' ? self : this);
