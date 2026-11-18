@@ -2178,6 +2178,13 @@ function videoCatFor(side, name, opening){
     const sw = side === '後手' ? swap(al.cat) : al.cat.replace(/^後手/, '');
     if (has(sw)) return { cat: sw, why: '開局「' + op + '」' };
   }
+  // V2.9.54：使用者在小棋聖手動「更改分類」會把目錄名存進 opening（PATCH），重新載入時照存的目錄放（含泡→砲等別字）
+  if (op && !/自選|擺局|中局/.test(op)) {
+    const n = op.replace(/泡/g, '砲').replace(/先人/g, '仙人').replace(/反攻/g, '反宮');
+    const bare = n.replace(/^(先手|後手)/, '');
+    for (const c of [op, n, n.replace(/砲/g, '炮'), side + bare, bare, bare.replace(/砲/g, '炮')]) if (c && has(c)) return { cat: c, why: '手動分類「' + op + '」' };
+    if (n.startsWith(side) && bare.length >= 2) { ensureCategory(side, n, side + '開局目錄：' + n); return { cat: n, why: '手動分類「' + op + '」' }; }
+  }
   const other = side + '其他開局';
   ensureCategory(side, other, side + '開局目錄：清單沒標開局、棋步也對不上的影片棋譜');
   return { cat: other, why: '依主播執' + (side === '先手' ? '紅' : '黑') };
