@@ -6,7 +6,7 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.52';
+const APP_VERSION = '2.9.53';
 const DISPLAY_VERSION = 'V2.9.52';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
@@ -1012,6 +1012,30 @@ app.delete('/api/games/:id', (q, s) => {
   db.games.splice(i, 1); save();
   s.json({ ok: true, deleted: 1 });
 });
+/* V2.9.53：播放時發現辨識錯誤 → 刪除這支影片的棋譜、影片放回「辨識失敗影片」（原因：辨識錯誤）；?dry=1 只回報會刪幾盤 */
+app.post('/api/games/:id/mark-failed', (q, s) => {
+  const g = db.games.find(x => String(x.id) === String(q.params.id));
+  if (!g) return s.status(404).json({ error: '找不到棋譜' });
+  const inf = videoGameInfo(g);
+  if (!inf || !inf.videoId) return s.status(400).json({ error: '只有影片辨識的棋譜可以標為辨識錯誤' });
+  const vid = inf.videoId;
+  const del = db.games.filter(x => { const k = videoGameInfo(x); return k && k.videoId === vid; });
+  if (q.query.dry === '1') return s.json({ ok: true, videoId: vid, games: del.map(x => ({ id: x.id, steps: (x.tokens || x.moves || []).length })) });
+  let vx = {}; try { vx = JSON.parse(g.rawExport || '{}') || {}; } catch {}
+  let src = null, it = null;
+  for (const pl of db.playlists) { if (pl.id === FAIL_PL) continue; const o = (pl.items || []).find(x => x.videoId === vid); if (o) { src = pl; it = o; break; } }
+  const ipad = /^ipad-/.test(vid);
+  const title = (it && it.title) || vx.file || g.event || vid;
+  const note = ipad ? '辨識錯誤；iPad 本機影片檔（' + (vx.file || vid.slice(5)) + '），請在 iPad 頁重新辨識' : '辨識錯誤（使用者標記），可勾選重新辨識';
+  const ids = new Set(del.map(x => x.id));
+  db.games = db.games.filter(x => !ids.has(x.id));
+  const f = addFailed(it ? { ...it, title } : { videoId: vid, title }, src, 'error:辨識錯誤', note);
+  f.queued = false; f.redo = !ipad;
+  if (it) { it.status = 'error:辨識錯誤'; it.queued = false; it.time = new Date().toISOString(); }
+  save();
+  console.log('[fail] 標為辨識錯誤', vid, '刪除棋譜', [...ids].join(','));
+  s.json({ ok: true, videoId: vid, deleted: [...ids] });
+});
 app.post('/api/playlists/:id/redo', (q, s) => {
   const pl = db.playlists.find(x => x.id === q.params.id);
   if (!pl) return s.status(404).json({ error: '找不到清單' });
@@ -1032,7 +1056,7 @@ app.post('/api/playlists/:id/queue', (q, s) => {
   const on = b.on !== false;
   let n = 0;
   const idx = (b.all === true && b.todoOnly && on) ? videoGamesIndex() : null;
-  for (const it of pl.items || []) if (!/^line-/.test(it.videoId) && (ids.has(it.videoId) || (b.all === true && !(idx && idx[it.videoId])))) { if (!!it.queued !== on) n++; it.queued = on; }
+  for (const it of pl.items || []) if (!/^(line|ipad)-/.test(it.videoId) && (ids.has(it.videoId) || (b.all === true && !(idx && idx[it.videoId])))) { if (!!it.queued !== on) n++; it.queued = on; }
   if (n) save();
   s.json({ ok: true, changed: n, queued: (pl.items || []).filter(x => x.queued).length });
 });
@@ -1242,7 +1266,7 @@ app.post('/api/line/inbox/ack', (q, s) => {
 });
 app.get('/api/queue', (q, s) => {
   const out = [];
-  for (const pl of db.playlists) for (const it of pl.items || []) if (it.queued && !/^line-/.test(it.videoId))
+  for (const pl of db.playlists) for (const it of pl.items || []) if (it.queued && !/^(line|ipad)-/.test(it.videoId))
     out.push({ playlistId: pl.id, playlistTitle: it.plTitle || pl.title, videoId: it.videoId, title: it.title, index: it.index, status: it.status || '', redo: !!it.redo, url: it.url || '' });
   s.json({ items: out });
 });

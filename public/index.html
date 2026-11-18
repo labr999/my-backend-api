@@ -459,6 +459,7 @@ button:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline
             <h3 id="cpTitle">📂 分類棋譜</h3>
             <button type="button" class="cp-btn main" onclick="cpNext()">⏭ 下一盤</button>
             <label style="font-size:.74rem;display:inline-flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="cpAuto"> 播完自動下一盤</label>
+            <button type="button" class="cp-btn" id="cpBad" onclick="cpMarkBad()" title="這盤影片辨識錯了：刪除棋譜、影片放回辨識失敗清單">⚠ 辨識錯誤</button>
             <button type="button" class="cp-btn" onclick="cpClose()" title="關閉分類清單，回到我的清單">✕</button>
           </div>
           <div class="cp-list" id="cpList"></div>
@@ -3058,6 +3059,26 @@ function cpRender(){
   document.getElementById('cpList').innerHTML=list.length?list.map(([l,i],n)=>'<div class="cp-it'+(i===curIdx?' cur':'')+'" onclick="cpGo('+i+')"><span class="n">'+(n+1)+'</span><span class="t">'+mlEsc(l.name)+'</span><span class="s">'+l.moves.length+' 步</span></div>').join(''):'<div class="ml-empty">此分類沒有可播放的棋譜</div>';
   cpFit();
   const c=document.querySelector('#cpList .cur'); if(c){ const box=document.getElementById('cpList'); if(c.offsetTop<box.scrollTop||c.offsetTop+c.offsetHeight>box.scrollTop+box.clientHeight) box.scrollTop=Math.max(0,c.offsetTop-c.offsetHeight*2); }
+}
+/* V2.9.53：目前這盤影片辨識錯誤 → 刪除這支影片的棋譜，影片放回「辨識失敗影片」 */
+async function cpMarkBad(){
+  const e=DATA[CP.side]&&DATA[CP.side][CP.cat]; const line=e&&e.lines[curIdx];
+  if(!line||!line.gameId){ toast('這盤不是影片辨識的棋譜'); return; }
+  try{
+    const r=await fetch('/api/games/'+encodeURIComponent(line.gameId)+'/mark-failed?dry=1',{method:'POST'}); const d=await r.json();
+    if(!r.ok) throw new Error(d.error||r.status);
+    const ipad=/^ipad-/.test(d.videoId);
+    if(!confirm('標為辨識錯誤：\n會刪除這支影片的 '+d.games.length+' 盤棋譜（#'+d.games.map(x=>x.id+'，'+x.steps+' 步').join('；#')+'），\n影片放回「辨識失敗影片」清單。'+(ipad?'\n（iPad 本機影片沒有網址，請在 iPad 頁重新辨識）':'\n之後可在失敗清單勾選重新辨識。')+'\n確定？')) return;
+    const r2=await fetch('/api/games/'+encodeURIComponent(line.gameId)+'/mark-failed',{method:'POST'}); const d2=await r2.json();
+    if(!r2.ok) throw new Error(d2.error||r2.status);
+    const del=new Set(d2.deleted.map(String));
+    ['先手','後手'].forEach(sd=>Object.keys(DATA[sd]).forEach(c=>{ DATA[sd][c].lines=DATA[sd][c].lines.filter(l=>!(l.gameId!=null&&del.has(String(l.gameId)))); }));
+    const list=cpPlayable();
+    if(list.length){ loadLine(CP.side,CP.cat,list[0][1]); cpRender(); } else cpClose();
+    try{ buildCatGrid(); }catch(_){}
+    try{ if(typeof mlInit==='function') mlInit(); }catch(_){}
+    toast('已刪除 '+d2.deleted.length+' 盤，影片放回辨識失敗清單');
+  }catch(err){ toast('標記失敗：'+err.message); }
 }
 function cpGo(i){ if(!CP.active) return; loadLine(CP.side,CP.cat,i); cpRender(); cpEndCheck(); }
 function cpNext(fromBoard){
