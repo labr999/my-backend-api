@@ -30,7 +30,7 @@ button:disabled{opacity:.5}
 #log{font:12px/1.5 ui-monospace,monospace;color:#555;max-height:160px;overflow:auto;white-space:pre-wrap}
 </style>
 </head><body>
-<header>♟ <b>影片棋譜辨識（iPad 版）</b><span style="opacity:.8">V1.1</span><a href="/" style="margin-left:auto">← 小棋聖首頁</a></header>
+<header>♟ <b>影片棋譜辨識（iPad 版）</b><span style="opacity:.8">V1.2</span><a href="/" style="margin-left:auto">← 小棋聖首頁</a></header>
 <main>
 <div class="card">
   <h2>1. 選影片</h2>
@@ -65,7 +65,7 @@ button:disabled{opacity:.5}
 <script src="/xqrecog.js?v=1.0"></script>
 <script src="/xqgame.js?v=1.7"></script>
 <script>
-const VERSION = '1.1';
+const VERSION = '1.2';
 const HF = 'https://huggingface.co/spaces/yolo12138/Chinese_Chess_Recognition/resolve/4bcaf91777effa645040ee76d008d45c2ffc03f3/onnx/';
 const MODELS = { pose: HF + 'pose/4_v6-0301.onnx', cls: HF + 'layout_recognition/nano_v3-0319.onnx' };
 const NAME = { K:'帥',A:'仕',B:'相',N:'馬',R:'車',C:'炮',P:'兵',k:'將',a:'士',b:'象',n:'馬',r:'車',c:'砲',p:'卒' };
@@ -152,8 +152,11 @@ async function scanFile(file, idx, n) {
       }
       kpAge++;
       const r = await bm.read(img, kp); rows = r.rows; used++;
-      if (rows.join('').split('x').length - 1 > 20 && kpAge > 2) kpAge = 99; // 畫面大變（切鏡頭）就重找棋盤（找不到更好的位置會沿用舊的）
+      const nHid = rows.join('').split('x').length - 1;
+      if (nHid > 20 && kpAge > 2) kpAge = 99; // 畫面大變（切鏡頭）就重找棋盤（找不到更好的位置會沿用舊的）
+      if (Math.min(...kp.sc) < 0.1) kpAge = 99; // V2.9.52：片頭動畫時找到的棋盤位置是錯的（分數 0.03）→ 下一張重找
       lastRows = rows; lastThumb = th; lastSig = cellSig(img, kp);
+      if (nHid > 20 || Math.min(...kp.sc) < 0.1) lastRows = null; // V2.9.52：看不清楚的判讀不沿用，下一張一定重讀（否則片頭錯位會一路沿用到開局之後）
       if (host === null && XQGame.mismatch(rows, XQGame.fromFen(XQGame.START_FEN)) <= 3) {
         const ay = (kp.kp[0][1] + kp.kp[1][1]) / 2, jy = (kp.kp[2][1] + kp.kp[3][1]) / 2;
         host = ay > jy ? '黑方' : '紅方';
