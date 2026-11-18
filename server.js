@@ -6,8 +6,8 @@ const iconv = require('iconv-lite');
 const { Server } = require('socket.io');
 const { chromium } = require('playwright');
 
-const APP_VERSION = '2.9.49';
-const DISPLAY_VERSION = 'V2.9.49';
+const APP_VERSION = '2.9.50';
+const DISPLAY_VERSION = 'V2.9.50';
 
 // 繁簡轉換對照表（涵蓋象棋大師、棋手名、棋規術語與常見字）
 const T2S_MAP = {
@@ -798,7 +798,8 @@ app.get('/api/games', (q, s) => {
       if (playable && (!((g.exactMoves?.length || g.moves?.length) > 0))) return false;
       return true;
     });
-    s.json({ items: withVideoCat(a.sort((x, y) => (y.id || 0) - (x.id || 0)).slice(0, 1000).map(sanitizeGame)), total: a.length });
+    const lim = Math.min(Math.max(Number(q.query.limit) || 1000, 1), 10000);  // V2.9.50：影片覆盤接中局擺子要讀全部棋譜
+    s.json({ items: withVideoCat(a.sort((x, y) => (y.id || 0) - (x.id || 0)).slice(0, lim).map(sanitizeGame)), total: a.length });
   } catch(err) {
     console.error('API /api/games error:', err);
     s.status(500).json({ error: '獲取棋譜失敗：' + err.message, items: [], total: 0 });
@@ -815,6 +816,20 @@ app.get('/api/games/:id', (q, s) => {
   }
 });
 
+/* V2.9.50：影片只有中局擺子（rawExport.setupOnly）→ 影片覆盤之後接上前段，新棋譜 rawExport.replaces＝舊編號：刪掉舊的、移出辨識失敗清單 */
+function replaceSetupOnly(g) {
+  let vx = {}; try { vx = JSON.parse(g.rawExport || '{}'); } catch { return false; }
+  const ids = [].concat(vx.replaces || []).map(Number).filter(Boolean); if (!ids.length) return false;
+  let n = 0;
+  for (const id of ids) {
+    const old = db.games.find(x => x && x.id === id && x.id !== g.id); if (!old) continue;
+    let ox = {}; try { ox = JSON.parse(old.rawExport || '{}'); } catch {}
+    if (!ox.setupOnly || String(ox.videoId) !== String(vx.videoId)) continue;
+    db.games = db.games.filter(x => x !== old); n++;
+  }
+  if (n) { removeFailed(String(vx.videoId), 'ok'); console.log('[setup] 中局擺子接上主棋譜，取代舊棋譜', ids.join(',')); }
+  return n > 0;
+}
 /* V2.9.41：iPad 辨識頁上傳的棋譜（videoId=ipad-檔名）→ 依檔名對到清單裡同標題的影片，改用真正的影片 id（失敗清單就能移出） */
 function normTitle(t) { return toSimp(String(t || '')).replace(/\.(mp4|mov|webm|mkv)$/i, '').replace(/[_ -]?\d{3,4}p$/i, '').replace(/[^0-9a-z\u3400-\u9fff]/gi, '').toLowerCase(); }
 function matchVideoByName(name) {
@@ -838,6 +853,7 @@ function relinkIpadGame(g) {
 function relinkAllIpad() { let n = 0; for (const g of db.games) if (relinkIpadGame(g)) n++; if (n) { console.log('[ipad] 依檔名對到清單影片 ' + n + ' 盤'); save(); } return n; }
 app.post('/api/games', (q, s) => {
   const r = addGame(q.body || {});
+  if (!r.duplicate) { try { if (replaceSetupOnly(r.game)) save(); } catch (e) { console.error('[setup] replace', e.message); } }
   if (!r.duplicate && relinkIpadGame(r.game)) save();
   if (!r.duplicate) { try { sweepFailed(); } catch (e) { console.error('[fail] sweep', e.message); } }
   s.status(r.duplicate ? 200 : 201).json({ ok: true, duplicate: r.duplicate, game: sanitizeGame(r.game) });
@@ -850,7 +866,7 @@ function videoGamesIndex() {
     if (!g || g.source !== 'video-scan' || !g.rawExport) continue;
     let vx = null; try { vx = JSON.parse(g.rawExport); } catch { continue; }
     if (!vx || !vx.videoId) continue;
-    (idx[vx.videoId] = idx[vx.videoId] || []).push({ id: g.id, result: g.result || '未知', opening: g.opening || '', steps: (g.tokens || g.moves || []).length, game: Number(vx.game) || 0, branch: Number(vx.branch) || 0, host: vx.host || '' });
+    (idx[vx.videoId] = idx[vx.videoId] || []).push({ id: g.id, result: g.result || '未知', opening: g.opening || '', steps: (g.tokens || g.moves || []).length, game: Number(vx.game) || 0, branch: Number(vx.branch) || 0, host: vx.host || '', setupOnly: !!vx.setupOnly });
   }
   for (const k in idx) idx[k].sort((a, b) => a.game - b.game || a.branch - b.branch);
   return idx;
@@ -1022,10 +1038,11 @@ app.post('/api/playlists/:id/queue', (q, s) => {
 });
 /* V2.9.27：辨識失敗影片清單：下載失敗（error:…）、找不到開局（no_start）、LINE 群組直接上傳的影片檔 */
 const FAIL_PL = 'failed-videos';
-function isFailStatus(st) { return /^(error|no_start)/.test(String(st || '')); }
+function isFailStatus(st) { return /^(error|no_start|no_main)/.test(String(st || '')); }
 function failReason(st) {
   st = String(st || '');
   if (/^no_start/.test(st)) return '找不到開局（無法辨識）';
+  if (/^no_main/.test(st)) return '只有中局擺子（缺主棋譜）';
   if (st === 'line_file') return '群組上傳影片檔（無網址）';
   if (/^error/.test(st)) return /下載失敗|download|HTTPS|timed out|format/i.test(st) ? '無法下載' : '辨識錯誤';
   return st;
@@ -1068,7 +1085,7 @@ function sweepFailed() {
   const idx = videoGamesIndex(); let n = 0;
   for (const f of [...fp.items]) {
     const gs = idx[f.videoId] || [];
-    if (gs.some(g => !g.branch && g.steps > SHORT_STEPS)) { removeFailed(f.videoId, 'ok'); n++; }
+    if (gs.some(g => !g.branch && !g.setupOnly && g.steps > SHORT_STEPS)) { removeFailed(f.videoId, 'ok'); n++; }
   }
   if (n) { console.log('[fail] 已辨識成功、移出辨識失敗清單 ' + n + ' 支'); save(); }
   return n;
