@@ -153,7 +153,9 @@ async function scanFile(file, idx, n) {
         kpAge = 0;
       }
       kpAge++;
-      const r = await bm.read(img, kp); rows = r.rows; used++;
+      const r = await bm.read(img, kp); used++;
+      // V2.9.56：模型沒把握的格子（信心 <0.6，例如棋盤最邊那一路）當成「被擋住」，不讓它一下有一下沒有而湊出假著法（趙國榮影片：象3進1／象1進3 來回）
+      rows = r.rows.map((s, ri) => Array.from(s).map((ch, ci) => r.conf[ri * 9 + ci] < 0.6 ? 'x' : ch).join(''));
       const nHid = rows.join('').split('x').length - 1;
       if (nHid > 20 && kpAge > 2) kpAge = 99; // 畫面大變（切鏡頭）就重找棋盤（找不到更好的位置會沿用舊的）
       if (Math.min(...kp.sc) < 0.1) kpAge = 99; // V2.9.52：片頭動畫時找到的棋盤位置是錯的（分數 0.03）→ 下一張重找
