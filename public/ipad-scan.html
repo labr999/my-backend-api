@@ -142,7 +142,9 @@ async function scanFile(file, idx, n) {
     let rows;
     const img = ctx.getImageData(0, 0, W, H);
     const sig = kp ? cellSig(img, kp) : null;
-    if (lastRows && thumbDiff(th, lastThumb) < 3 && cellDiff(sig, lastSig) < 6) { rows = lastRows; reused++; }
+    // V2.9.55：找到棋盤後只比棋盤 90 格（旁邊主播講話、手勢一直在動，整張縮圖永遠「有變」→ 每秒都重跑模型，辨識變很慢）
+    const same = sig ? cellDiff(sig, lastSig) < 6 : thumbDiff(th, lastThumb) < 3;
+    if (lastRows && same) { rows = lastRows; reused++; }
     else {
       if (!kp || kpAge >= 8) {
         const nk = portrait ? await bm.keypointsRefined(img) : await bm.keypoints(img), ns = Math.min(...nk.sc);
